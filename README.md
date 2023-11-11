@@ -5,13 +5,13 @@ React Native Video
 ## Installation
 
 ```sh
-npm install rn-video
+npm install @tientham/rn-video
 ```
 
 ## Usage
 
 ```js
-import { RnVideoView } from "rn-video";
+import { RnVideoView } from "@tientham/rn-video";
 
 // ...
 
