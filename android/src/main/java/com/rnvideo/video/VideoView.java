@@ -31,7 +31,7 @@ public class VideoView extends PlayerView {
   }
 
   public void initPlayer(final String uri) {
-    DefaultTrackSelector trackSelector = new DefaultTrackSelector(this);
+    DefaultTrackSelector trackSelector = new DefaultTrackSelector(this.themedReactContext);
     trackSelector.setParameters(trackSelector
             .buildUponParameters()
             .setMaxVideoSize(256, 144)
