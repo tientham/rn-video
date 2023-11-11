@@ -31,7 +31,12 @@ public class VideoView extends PlayerView {
   }
 
   public void initPlayer(final String uri) {
-    ExoPlayer.Builder playerBuilder = new ExoPlayer.Builder(this.themedReactContext);
+    DefaultTrackSelector trackSelector = new DefaultTrackSelector(this);
+    trackSelector.setParameters(trackSelector
+            .buildUponParameters()
+            .setMaxVideoSize(256, 144)
+            .setForceHighestSupportedBitrate(true));
+    ExoPlayer.Builder playerBuilder = new ExoPlayer.Builder(this.themedReactContext).setTrackSelector(trackSelector);
     this.player = playerBuilder.build();
 
     setPlayer(this.player);
