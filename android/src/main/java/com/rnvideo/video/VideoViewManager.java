@@ -37,23 +37,6 @@ public class VideoViewManager extends SimpleViewManager<VideoView> {
     return new VideoView(reactContext);
   }
 
-  @Override
-  public void onDropViewInstance(VideoView player) {
-    super.onDropViewInstance(player);
-    player.cleanup();
-  }
-
-  @Nullable
-  @Override
-  public Map getExportedCustomDirectEventTypeConstants() {
-    MapBuilder.Builder<String, Map> builder = MapBuilder.builder();
-    for (EventsEnum evt : EventsEnum.values()) {
-      builder.put(evt.toString(), MapBuilder.of("registrationName", evt.toString()));
-    }
-    Log.d(VideoViewManager.REACT_PACKAGE, builder.toString());
-    return builder.build();
-  }
-
   @ReactProp(name = SET_SOURCE)
   public void setSource(final VideoView playerView, @Nullable String source) {
     if (source == null) {
