@@ -14,6 +14,6 @@ interface NativeProps extends ViewProps {
   replay?: boolean;
 }
 
-export default codegenNativeComponent<NativeProps>('GrfVideo', {
+export default codegenNativeComponent<NativeProps>('RnVideo', {
   excludedPlatforms: ['iOS'],
 });
