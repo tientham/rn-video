@@ -1,14 +1,9 @@
 import * as React from 'react';
 
 import { StyleSheet, View } from 'react-native';
-import { RnVideoView } from 'rn-video';
 
 export default function App() {
-  return (
-    <View style={styles.container}>
-      <RnVideoView color="#32a852" style={styles.box} />
-    </View>
-  );
+  return <View style={styles.container}></View>;
 }
 
 const styles = StyleSheet.create({
