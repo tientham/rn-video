@@ -1,6 +1,6 @@
 # RnVideo ![Rn-Video](https://img.shields.io/badge/v0.1.7-pass-green.svg?label=latest)
 
-RnVideo - React Native Video is an react native library for a fast and performance video on Android (currently support only Android).
+**RnVideo** is a react native library for a fast and performance video on Android (currently support only Android).
 
 ![RnVideo](https://img.shields.io/badge/v0.1.7-pass-green.svg)
 
@@ -10,7 +10,7 @@ Some of my applications have been sufferring a lot about the performance issue w
 
 **This library currently supports Android. And it is using the latest androidx.media3.**
 
-Please note that, according to this annoucement of Exoplayer [Exoplayer Deprecation](https://github.com/google/ExoPlayer#deprecation), exoplayer:2.19.1 will be the last artifact release for ExoPlayer and it will be replaced by AndroidX Media3. Therefore, my library here will survive 😉
+Please note that, according to this annoucement of Exoplayer [Exoplayer Deprecation](https://github.com/google/ExoPlayer#deprecation), `exoplayer:2.19.1` will be the last artifact release for ExoPlayer and it will be replaced by `AndroidX Media3`. Therefore, my library here will survive 😉
 
 ## Installation
 
