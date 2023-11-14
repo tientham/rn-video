@@ -34,7 +34,7 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
 
   private ThemedReactContext themedReactContext;
   private String source;
-  private String LOG_TAG = "RnVideo VideoView";
+  private String TAG = "RnVideo VideoView";
 
   public static final double DEFAULT_MAX_HEAP_ALLOCATION_PERCENT = 1;
   public static final double DEFAULT_MIN_BACK_BUFFER_MEMORY_RESERVE = 0;
@@ -61,9 +61,13 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
 
   private Map<String, String> requestHeaders;
 
+  private Uri srcUri;
+  private String extension;
+  private int minLoadRetryCount = 3;
+
   public VideoView(ThemedReactContext ctx) {
     super(ctx);
-    Log.d("Media3-VideoView", "INIT VIDEO VIEW");
+    Log.d(TAG, "INIT VIDEO VIEW");
 
     setUseController(false);
     setControllerAutoShow(false);
@@ -93,8 +97,12 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
             // Initialize core configuration and listeners
             initializePlayerCore(VideoView.this);
           }
+
+          if (srcUri != null) {
+            initializePlayerSource(VideoView.this, null);
+          }
         } catch (Exception ex) {
-          Log.d(VideoView.class.getName(), ex.toString());
+          Log.d(TAG, ex.toString());
         }
       }
     }, 1);
@@ -151,6 +159,117 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
     setPlayWhenReady(true);
   }
 
+  private void initializePlayerSource(VideoView self, DrmSessionManager drmSessionManager) {
+    MediaSource mediaSource = buildMediaSource(self.srcUri, self.extension, drmSessionManager, startTimeMs, endTimeMs);
+
+    // wait for player to be set
+    while (player == null) {
+        try {
+            wait();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            Log.e("ExoPlayer Exception", ex.toString());
+        }
+    }
+    player.setMediaSource(mediaSource);
+    player.prepare();
+
+    reLayout(exoPlayerView);
+
+    finishPlayerInitialization();
+    }
+
+  private void finishPlayerInitialization() {
+    // Initializing the playerControlView
+    initializePlayerControl();
+    setControls(controls);
+    applyModifiers();
+  }
+
+  private DrmSessionManager buildDrmSessionManager(UUID uuid, String licenseUrl, String[] keyRequestPropertiesArray) throws UnsupportedDrmException {
+      return buildDrmSessionManager(uuid, licenseUrl, keyRequestPropertiesArray, 0);
+  }
+
+  private DrmSessionManager buildDrmSessionManager(UUID uuid, String licenseUrl, String[] keyRequestPropertiesArray, int retryCount) throws UnsupportedDrmException {
+      if (Util.SDK_INT < 18) {
+          return null;
+      }
+      try {
+          HttpMediaDrmCallback drmCallback = new HttpMediaDrmCallback(licenseUrl,
+                  buildHttpDataSourceFactory(false));
+          if (keyRequestPropertiesArray != null) {
+              for (int i = 0; i < keyRequestPropertiesArray.length - 1; i += 2) {
+                  drmCallback.setKeyRequestProperty(keyRequestPropertiesArray[i], keyRequestPropertiesArray[i + 1]);
+              }
+          }
+          FrameworkMediaDrm mediaDrm = FrameworkMediaDrm.newInstance(uuid);
+          if (hasDrmFailed) {
+              // When DRM fails using L1 we want to switch to L3
+              mediaDrm.setPropertyString("securityLevel", "L3");
+          }
+          return new DefaultDrmSessionManager(uuid, mediaDrm, drmCallback, null, false, 3);
+      } catch(UnsupportedDrmException ex) {
+          // Unsupported DRM exceptions are handled by the calling method
+          throw ex;
+      } catch (Exception ex) {
+          if (retryCount < 3) {
+              // Attempt retry 3 times in case where the OS Media DRM Framework fails for whatever reason
+              return buildDrmSessionManager(uuid, licenseUrl, keyRequestPropertiesArray, ++retryCount);
+          }
+          return null;
+      }
+  }
+
+  private MediaSource buildMediaSource(Uri uri, String overrideExtension, DrmSessionManager drmSessionManager, long startTimeMs, long endTimeMs) {
+    if (uri == null) {
+        throw new IllegalStateException("Invalid video uri");
+    }
+    int type = Util.inferContentType(!TextUtils.isEmpty(overrideExtension) ? "." + overrideExtension
+            : uri.getLastPathSegment());
+    config.setDisableDisconnectError(this.disableDisconnectError);
+
+    MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(uri);
+
+    MediaItem mediaItem = mediaItemBuilder.build();
+    MediaSource mediaSource;
+    DrmSessionManagerProvider drmProvider;
+    if (drmSessionManager != null) {
+        drmProvider = new DrmSessionManagerProvider() {
+            @Override
+            public DrmSessionManager get(MediaItem mediaItem) {
+                return drmSessionManager;
+            }
+        };
+    } else {
+        drmProvider = new DefaultDrmSessionManagerProvider();
+    }
+    switch (type) {
+
+        case CONTENT_TYPE_OTHER:
+            mediaSource = new ProgressiveMediaSource.Factory(
+                    mediaDataSourceFactory
+            ).setDrmSessionManagerProvider(drmProvider)
+                    .setLoadErrorHandlingPolicy(
+                            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
+                    ).createMediaSource(mediaItem);
+            break;
+        default: {
+            throw new IllegalStateException("Unsupported type: " + type);
+        }
+    }
+
+    if (startTimeMs >= 0 && endTimeMs >= 0)
+    {
+        return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
+    } else if (startTimeMs >= 0) {
+        return new ClippingMediaSource(mediaSource, startTimeMs * 1000, TIME_END_OF_SOURCE);
+    } else if (endTimeMs >= 0) {
+        return new ClippingMediaSource(mediaSource, 0, endTimeMs * 1000);
+    }
+
+    return mediaSource;
+  }
+
   private MediaSource.Factory buildDataSourceFactory(boolean useBandwidthMeter) {
     return DataSourceUtil.getDefaultDataSourceFactory(this.themedReactContext,
       useBandwidthMeter ? bandwidthMeter : null, requestHeaders);
@@ -187,19 +306,19 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
   }
 
   public void setPlay(final boolean shouldPlay) {
-    Log.d(LOG_TAG, "setPlay: " + shouldPlay);
+    Log.d(TAG, "setPlay: " + shouldPlay);
   }
 
   public void setReplay(final boolean shouldReplay) {
-    Log.d(LOG_TAG, "setReplay: " + shouldReplay);
+    Log.d(TAG, "setReplay: " + shouldReplay);
   }
 
   public void setMediaVolume(float volume) {
-    Log.d(LOG_TAG, "setMediaVolume: " + volume);
+    Log.d(TAG, "setMediaVolume: " + volume);
   }
 
   public void setSource(final String uri) {
-    Log.d(LOG_TAG, "setSource: " + uri);
+    Log.d(TAG, "setSource: " + uri);
     initPlayer(uri);
   }
 

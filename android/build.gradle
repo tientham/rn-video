@@ -83,7 +83,13 @@ dependencies {
   //noinspection GradleDynamicVersion
   implementation "com.facebook.react:react-native:+"
 
-  implementation "androidx.media3:media3-ui:1.1.1"
-  implementation "androidx.media3:media3-exoplayer:1.1.1"
+  implementation("com.squareup.okhttp3:okhttp:5.0.0-alpha.3")
+  implementation("com.squareup.okhttp3:okhttp-urlconnection:4.9.2")
+  implementation("com.google.android.exoplayer:extension-okhttp:2.18.1") {
+      exclude("com.squareup.okhttp3", "okhttp")
+  }
+  implementation("androidx.media3:media3-ui:1.1.1")
+  implementation("androidx.media3:media3-exoplayer:1.1.1")
+  implementation("androidx.media3:media3-exoplayer-dash:1.1.1")
 }
 
