@@ -30,6 +30,7 @@ import androidx.media3.exoplayer.drm.DefaultDrmSessionManager;
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManagerProvider;
 import androidx.media3.exoplayer.drm.DrmSessionManager;
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider;
+import androidx.media3.exoplayer.drm.ExoMediaDrm;
 import androidx.media3.exoplayer.drm.FrameworkMediaDrm;
 import androidx.media3.exoplayer.drm.HttpMediaDrmCallback;
 import androidx.media3.exoplayer.drm.UnsupportedDrmException;
@@ -74,7 +75,7 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
 
   private int backBufferDurationMs = DefaultLoadControl.DEFAULT_BACK_BUFFER_DURATION_MS;
 
-  private DataSource.Factory mediaDataSourceFactory;
+  private MediaSource.Factory mediaDataSourceFactory;
   private DefaultBandwidthMeter bandwidthMeter;
 
   private ExoPlayer player;
@@ -90,7 +91,7 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
   private long endTimeMs = -1;
   private boolean hasDrmFailed = false;
 
-  
+
   public VideoView(ThemedReactContext ctx) {
     super(ctx);
     Log.d(TAG, "INIT VIDEO VIEW");
@@ -237,7 +238,14 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
         // When DRM fails using L1 we want to switch to L3
         mediaDrm.setPropertyString("securityLevel", "L3");
       }
-      return new DefaultDrmSessionManager(uuid, mediaDrm, drmCallback, null, false, 3);
+
+      ExoMediaDrm.Provider provider = new ExoMediaDrm.Provider() {
+          @Override
+          public ExoMediaDrm acquireExoMediaDrm(UUID uuid) {
+              return mediaDrm;
+          }
+      };
+      return new DefaultDrmSessionManager(uuid, provider, drmCallback, null, false, 3);
     } catch(UnsupportedDrmException ex) {
       // Unsupported DRM exceptions are handled by the calling method
       throw ex;
