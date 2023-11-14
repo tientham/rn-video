@@ -19,6 +19,7 @@ import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DataSource;
+import androidx.media3.exoplayer.drm.MediaDrmCallback;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.datasource.HttpDataSource;
@@ -46,6 +47,7 @@ import androidx.media3.ui.PlayerView;
 import androidx.media3.common.Player;
 
 
+import java.util.HashMap;
 import java.util.UUID;
 import java.util.Map;
 
@@ -248,13 +250,12 @@ import java.util.Map;
               return mediaDrm;
           }
       };
-      return new DefaultDrmSessionManager(
-        uuid,
-        provider,
-        drmCallback,
-        null,
-        false,
-        3);
+      return new DefaultDrmSessionManager.Builder()
+        .setUuidAndExoMediaDrmProvider(uuid, provider)
+        .setMultiSession(false)
+        .setKeyRequestParameters(null)
+        .setUseDrmSessionsForClearContent(3)
+        .build(drmCallback);
     } catch(UnsupportedDrmException ex) {
       // Unsupported DRM exceptions are handled by the calling method
       throw ex;
