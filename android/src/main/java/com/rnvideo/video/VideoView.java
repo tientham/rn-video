@@ -88,15 +88,15 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
 
   private long startTimeMs = -1;
   private long endTimeMs = -1;
+  private boolean hasDrmFailed = false;
 
+  
   public VideoView(ThemedReactContext ctx) {
     super(ctx);
     Log.d(TAG, "INIT VIDEO VIEW");
 
     setUseController(false);
     setControllerAutoShow(false);
-    setRepeatMode(Player.REPEAT_MODE_ALL);
-    setVolume(0.f);
     setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
     themedReactContext = ctx;
 
@@ -182,6 +182,9 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
       .setMediaSourceFactory(mediaDataSourceFactory)
       .build();
 
+    this.player.setRepeatMode(Player.REPEAT_MODE_ALL);
+    this.player.setVolume(0.f);
+
     setPlayWhenReady(true);
   }
 
@@ -190,12 +193,12 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
 
     // wait for player to be set
     while (player == null) {
-        try {
-            wait();
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-            Log.e("ExoPlayer Exception", ex.toString());
-        }
+      try {
+        wait();
+      } catch (InterruptedException ex) {
+        Thread.currentThread().interrupt();
+        Log.e(TAG, ex.toString());
+      }
     }
     player.setMediaSource(mediaSource);
     player.prepare();
@@ -203,10 +206,10 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
     reLayout(this);
 
     finishPlayerInitialization();
-    }
+  }
 
   private void finishPlayerInitialization() {
-    applyModifiers();
+    // applyModifiers();
   }
 
   private void reLayout(View view) {
@@ -221,30 +224,30 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
   }
 
   private DrmSessionManager buildDrmSessionManager(UUID uuid, String licenseUrl, String[] keyRequestPropertiesArray, int retryCount) throws UnsupportedDrmException {
-      try {
-          HttpMediaDrmCallback drmCallback = new HttpMediaDrmCallback(licenseUrl,
-                  buildHttpDataSourceFactory(false));
-          if (keyRequestPropertiesArray != null) {
-              for (int i = 0; i < keyRequestPropertiesArray.length - 1; i += 2) {
-                  drmCallback.setKeyRequestProperty(keyRequestPropertiesArray[i], keyRequestPropertiesArray[i + 1]);
-              }
-          }
-          FrameworkMediaDrm mediaDrm = FrameworkMediaDrm.newInstance(uuid);
-          if (hasDrmFailed) {
-              // When DRM fails using L1 we want to switch to L3
-              mediaDrm.setPropertyString("securityLevel", "L3");
-          }
-          return new DefaultDrmSessionManager(uuid, mediaDrm, drmCallback, null, false, 3);
-      } catch(UnsupportedDrmException ex) {
-          // Unsupported DRM exceptions are handled by the calling method
-          throw ex;
-      } catch (Exception ex) {
-          if (retryCount < 3) {
-              // Attempt retry 3 times in case where the OS Media DRM Framework fails for whatever reason
-              return buildDrmSessionManager(uuid, licenseUrl, keyRequestPropertiesArray, ++retryCount);
-          }
-          return null;
+    try {
+      HttpMediaDrmCallback drmCallback = new HttpMediaDrmCallback(licenseUrl,
+              buildHttpDataSourceFactory(false));
+      if (keyRequestPropertiesArray != null) {
+        for (int i = 0; i < keyRequestPropertiesArray.length - 1; i += 2) {
+          drmCallback.setKeyRequestProperty(keyRequestPropertiesArray[i], keyRequestPropertiesArray[i + 1]);
+        }
       }
+      FrameworkMediaDrm mediaDrm = FrameworkMediaDrm.newInstance(uuid);
+      if (hasDrmFailed) {
+        // When DRM fails using L1 we want to switch to L3
+        mediaDrm.setPropertyString("securityLevel", "L3");
+      }
+      return new DefaultDrmSessionManager(uuid, mediaDrm, drmCallback, null, false, 3);
+    } catch(UnsupportedDrmException ex) {
+      // Unsupported DRM exceptions are handled by the calling method
+      throw ex;
+    } catch (Exception ex) {
+      if (retryCount < 3) {
+        // Attempt retry 3 times in case where the OS Media DRM Framework fails for whatever reason
+        return buildDrmSessionManager(uuid, licenseUrl, keyRequestPropertiesArray, ++retryCount);
+      }
+      return null;
+    }
   }
 
   private MediaSource buildMediaSource(Uri uri, String overrideExtension, DrmSessionManager drmSessionManager, long startTimeMs, long endTimeMs) {
