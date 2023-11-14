@@ -127,12 +127,13 @@ import java.util.Map;
             // Initialize core configuration and listeners
             initializePlayerCore(VideoView.this);
           }
-
+          Log.d(TAG, "initPlayer srcUri" + srcUri);
           if (srcUri != null) {
             initializePlayerSource(VideoView.this, null);
           }
         } catch (Exception ex) {
-          Log.d(TAG, ex.toString());
+          ex.printStackTrace();
+          Log.d(TAG, "initPlayer " + ex.toString());
         }
       }
     }, 1);

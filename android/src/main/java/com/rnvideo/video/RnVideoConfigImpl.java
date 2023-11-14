@@ -30,16 +30,16 @@ public class RnVideoConfigImpl implements RnVideoConfig {
 
   @Override
   public void setDisableDisconnectError(boolean disableDisconnectError) {
-
+    this.disableDisconnectError = disableDisconnectError;
   }
 
   @Override
   public boolean getDisableDisconnectError() {
-    return false;
+    return this.disableDisconnectError;
   }
 
   @Override
   public DefaultBandwidthMeter getBandwidthMeter() {
-    return null;
+    return bandwidthMeter;
   }
 }
