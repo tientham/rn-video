@@ -9,10 +9,8 @@ import static androidx.media3.common.C.TIME_END_OF_SOURCE;
 
 import com.facebook.react.uimanager.ThemedReactContext;
 import android.annotation.SuppressLint;
-import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
-import android.util.AttributeSet;
 import android.view.View;
 import android.util.Log;
 
@@ -20,8 +18,9 @@ import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.util.UnstableApi;
-import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.datasource.DataSource;
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
@@ -35,7 +34,6 @@ import androidx.media3.exoplayer.drm.FrameworkMediaDrm;
 import androidx.media3.exoplayer.drm.HttpMediaDrmCallback;
 import androidx.media3.exoplayer.drm.UnsupportedDrmException;
 import androidx.media3.exoplayer.source.ClippingMediaSource;
-import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.source.ProgressiveMediaSource;
 import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
@@ -52,11 +50,11 @@ import java.util.UUID;
 import java.util.Map;
 
 
-public class VideoView extends PlayerView implements BandwidthMeter.EventListener {
+@UnstableApi public class VideoView extends PlayerView implements BandwidthMeter.EventListener {
 
-  private ThemedReactContext themedReactContext;
+  private final ThemedReactContext themedReactContext;
   private String source;
-  private String TAG = "RnVideo VideoView";
+  private final String TAG = "RnVideo VideoView";
 
   public static final double DEFAULT_MAX_HEAP_ALLOCATION_PERCENT = 1;
   public static final double DEFAULT_MIN_BACK_BUFFER_MEMORY_RESERVE = 0;
@@ -75,7 +73,8 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
 
   private int backBufferDurationMs = DefaultLoadControl.DEFAULT_BACK_BUFFER_DURATION_MS;
 
-  private MediaSource.Factory mediaDataSourceFactory;
+  private DataSource.Factory mediaDataSourceFactory;
+  private final RnVideoConfig config;
   private DefaultBandwidthMeter bandwidthMeter;
 
   private ExoPlayer player;
@@ -90,12 +89,14 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
   private long startTimeMs = -1;
   private long endTimeMs = -1;
   private boolean hasDrmFailed = false;
-
-
-  public VideoView(ThemedReactContext ctx) {
+  private UUID drmUUID = null;
+  private String drmLicenseUrl = null;
+  private boolean disableDisconnectError;
+  public VideoView(ThemedReactContext ctx, RnVideoConfig config) {
     super(ctx);
     Log.d(TAG, "INIT VIDEO VIEW");
-
+    this.config = config;
+    this.bandwidthMeter = config.getBandwidthMeter();
     setUseController(false);
     setControllerAutoShow(false);
     setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
@@ -176,11 +177,13 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
       new DefaultRenderersFactory(this.themedReactContext)
       .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF);
 
+    MediaSource.Factory mediaSourceFactory = new DefaultMediaSourceFactory(mediaDataSourceFactory);
+
     this.player = new ExoPlayer.Builder(this.themedReactContext, renderersFactory)
       .setTrackSelector(self.trackSelector)
       .setBandwidthMeter(bandwidthMeter)
       .setLoadControl(loadControl)
-      .setMediaSourceFactory(mediaDataSourceFactory)
+      .setMediaSourceFactory(mediaSourceFactory)
       .build();
 
     this.player.setRepeatMode(Player.REPEAT_MODE_ALL);
@@ -245,7 +248,13 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
               return mediaDrm;
           }
       };
-      return new DefaultDrmSessionManager(uuid, provider, drmCallback, null, false, 3);
+      return new DefaultDrmSessionManager(
+        uuid,
+        provider,
+        drmCallback,
+        null,
+        false,
+        3);
     } catch(UnsupportedDrmException ex) {
       // Unsupported DRM exceptions are handled by the calling method
       throw ex;
@@ -296,13 +305,16 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
     return mediaSource;
   }
 
-  private MediaSource.Factory buildDataSourceFactory(boolean useBandwidthMeter) {
+  private DataSource.Factory buildDataSourceFactory(boolean useBandwidthMeter) {
     return DataSourceUtil.getDefaultDataSourceFactory(this.themedReactContext,
       useBandwidthMeter ? bandwidthMeter : null, requestHeaders);
   }
 
   private HttpDataSource.Factory buildHttpDataSourceFactory(boolean useBandwidthMeter) {
-    return DataSourceUtil.getDefaultHttpDataSourceFactory(this.themedReactContext, useBandwidthMeter ? bandwidthMeter : null, requestHeaders);
+    return DataSourceUtil.getDefaultHttpDataSourceFactory(
+      this.themedReactContext,
+      useBandwidthMeter ? bandwidthMeter : null,
+      requestHeaders);
   }
 
   public void setBackBufferDurationMs(int backBufferDurationMs) {
@@ -345,7 +357,8 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
 
   public void setSource(final String uri) {
     Log.d(TAG, "setSource: " + uri);
-    initPlayer(uri);
+    this.srcUri = Uri.parse(uri);
+    initPlayer();
   }
 
 }

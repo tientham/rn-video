@@ -4,7 +4,6 @@
 package com.rnvideo.video;
 
 import android.annotation.SuppressLint;
-import android.content.Context;
 
 import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.modules.network.CookieJarContainer;
@@ -15,9 +14,8 @@ import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
-
-import com.google.android.exoplayer2.ext.okhttp.OkHttpDataSource;
 
 import java.util.Map;
 import okhttp3.OkHttpClient;
@@ -36,14 +34,14 @@ public class DataSourceUtil {
     }
 
     @SuppressLint("UnsafeOptInUsageError")
-    public static String getUserAgent(Context context) {
+    public static String getUserAgent(ReactContext context) {
         if (userAgent == null) {
             userAgent = Util.getUserAgent(context, "RnVideo");
         }
         return userAgent;
     }
 
-    public static DataSource.Factory getRawDataSourceFactory(Context context) {
+    public static DataSource.Factory getRawDataSourceFactory(ReactContext context) {
         if (rawDataSourceFactory == null) {
             rawDataSourceFactory = buildRawDataSourceFactory(context);
         }
@@ -55,7 +53,10 @@ public class DataSourceUtil {
     }
 
 
-    public static DataSource.Factory getDefaultDataSourceFactory(Context context, DefaultBandwidthMeter bandwidthMeter, Map<String, String> requestHeaders) {
+    public static DataSource.Factory getDefaultDataSourceFactory(
+      ReactContext context,
+      DefaultBandwidthMeter bandwidthMeter,
+      Map<String, String> requestHeaders) {
         if (defaultDataSourceFactory == null || (requestHeaders != null && !requestHeaders.isEmpty())) {
             defaultDataSourceFactory = buildDataSourceFactory(context, bandwidthMeter, requestHeaders);
         }
@@ -66,7 +67,10 @@ public class DataSourceUtil {
         DataSourceUtil.defaultDataSourceFactory = factory;
     }
 
-    public static HttpDataSource.Factory getDefaultHttpDataSourceFactory(Context context, DefaultBandwidthMeter bandwidthMeter, Map<String, String> requestHeaders) {
+    public static HttpDataSource.Factory getDefaultHttpDataSourceFactory(
+      ReactContext context,
+      DefaultBandwidthMeter bandwidthMeter,
+      Map<String, String> requestHeaders) {
         if (defaultHttpDataSourceFactory == null || (requestHeaders != null && !requestHeaders.isEmpty())) {
             defaultHttpDataSourceFactory = buildHttpDataSourceFactory(context, bandwidthMeter, requestHeaders);
         }
@@ -77,21 +81,28 @@ public class DataSourceUtil {
         DataSourceUtil.defaultHttpDataSourceFactory = factory;
     }
 
-    private static DataSource.Factory buildRawDataSourceFactory(Context context) {
+    private static DataSource.Factory buildRawDataSourceFactory(ReactContext context) {
         return new RawResourceDataSourceFactory(context.getApplicationContext());
     }
 
-    private static DataSource.Factory buildDataSourceFactory(Context context, DefaultBandwidthMeter bandwidthMeter, Map<String, String> requestHeaders) {
+    private static DataSource.Factory buildDataSourceFactory(
+      ReactContext context,
+      DefaultBandwidthMeter bandwidthMeter,
+      Map<String, String> requestHeaders) {
         return new DefaultDataSource.Factory(context,
                 buildHttpDataSourceFactory(context, bandwidthMeter, requestHeaders));
     }
 
-    private static HttpDataSource.Factory buildHttpDataSourceFactory(Context context, DefaultBandwidthMeter bandwidthMeter, Map<String, String> requestHeaders) {
+    @SuppressLint("UnsafeOptInUsageError")
+    private static HttpDataSource.Factory buildHttpDataSourceFactory(
+      ReactContext context,
+      DefaultBandwidthMeter bandwidthMeter,
+      Map<String, String> requestHeaders) {
         OkHttpClient client = OkHttpClientProvider.getOkHttpClient();
         CookieJarContainer container = (CookieJarContainer) client.cookieJar();
         ForwardingCookieHandler handler = new ForwardingCookieHandler(context);
         container.setCookieJar(new JavaNetCookieJar(handler));
-        OkHttpDataSource.Factory okHttpDataSourceFactory = new OkHttpDataSource.Factory((Call.Factory) client)
+        @SuppressLint("UnsafeOptInUsageError") OkHttpDataSource.Factory okHttpDataSourceFactory = new OkHttpDataSource.Factory((Call.Factory) client)
                 .setUserAgent(getUserAgent(context))
                 .setTransferListener(bandwidthMeter);
 

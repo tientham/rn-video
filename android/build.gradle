@@ -81,13 +81,11 @@ dependencies {
   // For < 0.71, this will be from the local maven repo
   // For > 0.71, this will be replaced by `com.facebook.react:react-android:$version` by react gradle plugin
   //noinspection GradleDynamicVersion
-  implementation "com.facebook.react:react-native:+"
+  implementation 'com.facebook.react:react-android:+'
 
   implementation("com.squareup.okhttp3:okhttp:5.0.0-alpha.3")
   implementation("com.squareup.okhttp3:okhttp-urlconnection:4.9.2")
-  implementation("com.google.android.exoplayer:extension-okhttp:2.18.1") {
-    exclude group: 'com.squareup.okhttp3', module: 'okhttp'
-  }
+  implementation("androidx.media3:media3-datasource-okhttp:1.1.1")
   implementation("androidx.media3:media3-ui:1.1.1")
   implementation("androidx.media3:media3-exoplayer:1.1.1")
   implementation("androidx.media3:media3-exoplayer-dash:1.1.1")
