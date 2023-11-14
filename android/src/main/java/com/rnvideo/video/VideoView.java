@@ -4,15 +4,21 @@
 
 package com.rnvideo.video;
 
+import static androidx.media3.common.C.CONTENT_TYPE_OTHER;
+import static androidx.media3.common.C.TIME_END_OF_SOURCE;
+
 import com.facebook.react.uimanager.ThemedReactContext;
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.net.Uri;
 import android.os.Handler;
 import android.util.AttributeSet;
+import android.view.View;
 import android.util.Log;
 
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
+import androidx.media3.common.MediaItem;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.datasource.DataSource;
@@ -20,6 +26,16 @@ import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.drm.DefaultDrmSessionManager;
+import androidx.media3.exoplayer.drm.DefaultDrmSessionManagerProvider;
+import androidx.media3.exoplayer.drm.DrmSessionManager;
+import androidx.media3.exoplayer.drm.DrmSessionManagerProvider;
+import androidx.media3.exoplayer.drm.FrameworkMediaDrm;
+import androidx.media3.exoplayer.drm.HttpMediaDrmCallback;
+import androidx.media3.exoplayer.drm.UnsupportedDrmException;
+import androidx.media3.exoplayer.source.ClippingMediaSource;
+import androidx.media3.exoplayer.source.MediaSource;
+import androidx.media3.exoplayer.source.ProgressiveMediaSource;
 import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection;
@@ -28,6 +44,11 @@ import androidx.media3.exoplayer.upstream.DefaultAllocator;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
+import androidx.media3.common.Player;
+
+
+import java.util.UUID;
+import java.util.Map;
 
 
 public class VideoView extends PlayerView implements BandwidthMeter.EventListener {
@@ -65,12 +86,17 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
   private String extension;
   private int minLoadRetryCount = 3;
 
+  private long startTimeMs = -1;
+  private long endTimeMs = -1;
+
   public VideoView(ThemedReactContext ctx) {
     super(ctx);
     Log.d(TAG, "INIT VIDEO VIEW");
 
     setUseController(false);
     setControllerAutoShow(false);
+    setRepeatMode(Player.REPEAT_MODE_ALL);
+    setVolume(0.f);
     setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
     themedReactContext = ctx;
 
@@ -174,16 +200,20 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
     player.setMediaSource(mediaSource);
     player.prepare();
 
-    reLayout(exoPlayerView);
+    reLayout(this);
 
     finishPlayerInitialization();
     }
 
   private void finishPlayerInitialization() {
-    // Initializing the playerControlView
-    initializePlayerControl();
-    setControls(controls);
     applyModifiers();
+  }
+
+  private void reLayout(View view) {
+    if (view == null) return;
+    view.measure(MeasureSpec.makeMeasureSpec(getMeasuredWidth(), MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(getMeasuredHeight(), MeasureSpec.EXACTLY));
+    view.layout(view.getLeft(), view.getTop(), view.getMeasuredWidth(), view.getMeasuredHeight());
   }
 
   private DrmSessionManager buildDrmSessionManager(UUID uuid, String licenseUrl, String[] keyRequestPropertiesArray) throws UnsupportedDrmException {
@@ -191,9 +221,6 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
   }
 
   private DrmSessionManager buildDrmSessionManager(UUID uuid, String licenseUrl, String[] keyRequestPropertiesArray, int retryCount) throws UnsupportedDrmException {
-      if (Util.SDK_INT < 18) {
-          return null;
-      }
       try {
           HttpMediaDrmCallback drmCallback = new HttpMediaDrmCallback(licenseUrl,
                   buildHttpDataSourceFactory(false));
@@ -222,10 +249,8 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
 
   private MediaSource buildMediaSource(Uri uri, String overrideExtension, DrmSessionManager drmSessionManager, long startTimeMs, long endTimeMs) {
     if (uri == null) {
-        throw new IllegalStateException("Invalid video uri");
+      throw new IllegalStateException("Invalid video uri");
     }
-    int type = Util.inferContentType(!TextUtils.isEmpty(overrideExtension) ? "." + overrideExtension
-            : uri.getLastPathSegment());
     config.setDisableDisconnectError(this.disableDisconnectError);
 
     MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(uri);
@@ -234,37 +259,27 @@ public class VideoView extends PlayerView implements BandwidthMeter.EventListene
     MediaSource mediaSource;
     DrmSessionManagerProvider drmProvider;
     if (drmSessionManager != null) {
-        drmProvider = new DrmSessionManagerProvider() {
-            @Override
-            public DrmSessionManager get(MediaItem mediaItem) {
-                return drmSessionManager;
-            }
-        };
-    } else {
-        drmProvider = new DefaultDrmSessionManagerProvider();
-    }
-    switch (type) {
-
-        case CONTENT_TYPE_OTHER:
-            mediaSource = new ProgressiveMediaSource.Factory(
-                    mediaDataSourceFactory
-            ).setDrmSessionManagerProvider(drmProvider)
-                    .setLoadErrorHandlingPolicy(
-                            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
-                    ).createMediaSource(mediaItem);
-            break;
-        default: {
-            throw new IllegalStateException("Unsupported type: " + type);
+      drmProvider = new DrmSessionManagerProvider() {
+        @Override
+        public DrmSessionManager get(MediaItem mediaItem) {
+            return drmSessionManager;
         }
+      };
+    } else {
+      drmProvider = new DefaultDrmSessionManagerProvider();
     }
+    mediaSource = new ProgressiveMediaSource.Factory(mediaDataSourceFactory)
+                    .setDrmSessionManagerProvider(drmProvider)
+                    .setLoadErrorHandlingPolicy(
+                      config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
+                    ).createMediaSource(mediaItem);
 
-    if (startTimeMs >= 0 && endTimeMs >= 0)
-    {
-        return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
+    if (startTimeMs >= 0 && endTimeMs >= 0){
+      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
     } else if (startTimeMs >= 0) {
-        return new ClippingMediaSource(mediaSource, startTimeMs * 1000, TIME_END_OF_SOURCE);
+      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, TIME_END_OF_SOURCE);
     } else if (endTimeMs >= 0) {
-        return new ClippingMediaSource(mediaSource, 0, endTimeMs * 1000);
+      return new ClippingMediaSource(mediaSource, 0, endTimeMs * 1000);
     }
 
     return mediaSource;
