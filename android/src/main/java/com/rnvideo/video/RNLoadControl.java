@@ -76,6 +76,7 @@ public class RNLoadControl extends DefaultLoadControl {
         runtime.gc();
         return false;
       }
+      Log.d(TAG, "shouldContinueLoading with playbackPositionUs: " + playbackPositionUs + " bufferedDurationUs: " + bufferedDurationUs + " playbackSpeed: " + playbackSpeed);
       return super.shouldContinueLoading(playbackPositionUs, bufferedDurationUs, playbackSpeed);
     }
 }

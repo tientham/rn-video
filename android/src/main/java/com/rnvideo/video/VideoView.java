@@ -10,6 +10,8 @@ import static androidx.media3.common.C.CONTENT_TYPE_OTHER;
 import static androidx.media3.common.C.CONTENT_TYPE_SS;
 import static androidx.media3.common.C.TIME_END_OF_SOURCE;
 
+import com.facebook.react.bridge.Dynamic;
+import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.uimanager.ThemedReactContext;
 import com.rnvideo.R;
 
@@ -22,19 +24,29 @@ import android.view.View;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.WorkerThread;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
+import androidx.media3.common.TrackGroup;
+import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.exoplayer.dash.DashMediaSource;
+import androidx.media3.exoplayer.dash.DashUtil;
 import androidx.media3.exoplayer.dash.DefaultDashChunkSource;
+import androidx.media3.exoplayer.dash.manifest.AdaptationSet;
+import androidx.media3.exoplayer.dash.manifest.DashManifest;
+import androidx.media3.exoplayer.dash.manifest.Period;
+import androidx.media3.exoplayer.dash.manifest.Representation;
 import androidx.media3.exoplayer.drm.DrmSessionEventListener;
 import androidx.media3.exoplayer.drm.MediaDrmCallback;
 import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
+import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.smoothstreaming.DefaultSsChunkSource;
 import androidx.media3.exoplayer.smoothstreaming.SsMediaSource;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
@@ -53,12 +65,15 @@ import androidx.media3.exoplayer.drm.HttpMediaDrmCallback;
 import androidx.media3.exoplayer.drm.UnsupportedDrmException;
 import androidx.media3.exoplayer.source.ClippingMediaSource;
 import androidx.media3.exoplayer.source.ProgressiveMediaSource;
+import androidx.media3.exoplayer.source.TrackGroupArray;
 import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection;
+import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
 import androidx.media3.exoplayer.upstream.BandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
+import androidx.media3.extractor.mp4.Track;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 import androidx.media3.common.Player;
@@ -66,16 +81,22 @@ import androidx.media3.common.Player;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.UUID;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 
 @UnstableApi public class VideoView extends PlayerView implements
   BandwidthMeter.EventListener,
   DrmSessionEventListener,
+  LifecycleEventListener,
   Player.Listener {
 
   private static final CookieManager DEFAULT_COOKIE_MANAGER;
@@ -127,17 +148,29 @@ import java.util.concurrent.Executors;
   private String drmLicenseUrl = null;
   private String[] drmLicenseHeader = null;
   private boolean disableDisconnectError;
+  private boolean isBuffering;
+  private boolean preventsDisplaySleepDuringVideoPlayback = true;
+  private boolean isUsingContentResolution = false;
+  private boolean selectTrackWhenReady = false;
+  private String videoTrackType;
+  private Dynamic videoTrackValue;
+  private long contentStartTime = -1L;
+  private boolean loadVideoStarted;
+
+
   public VideoView(ThemedReactContext ctx, RnVideoConfig config) {
     super(ctx);
     Log.d(TAG, "INIT VIDEO VIEW");
+    themedReactContext = ctx;
     this.config = config;
     this.bandwidthMeter = config.getBandwidthMeter();
     setUseController(false);
     setControllerAutoShow(false);
     setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
-    themedReactContext = ctx;
 
     this.mediaDataSourceFactory = buildDataSourceFactory(true);
+
+    themedReactContext.addLifecycleEventListener(this);
   }
 
   @Override
@@ -310,15 +343,17 @@ import java.util.concurrent.Executors;
     DrmSessionManager drmSessionManager = null;
     if (self.drmUUID != null) {
       try {
+        Log.d(TAG, "initializePlayerSource with drmSessionManager - 1");
         drmSessionManager = self.buildDrmSessionManager(self.drmUUID, self.drmLicenseUrl,
           self.drmLicenseHeader);
       } catch (UnsupportedDrmException e) {
         int errorStringId = e.reason == UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME
           ? R.string.error_drm_unsupported_scheme : R.string.error_drm_unknown;
-
+        Log.d(TAG, "initializePlayerSource with UnsupportedDrmException");
         return null;
       }
     }
+    Log.d(TAG, "initializePlayerSource with drmSessionManager - 2");
     return drmSessionManager;
   }
 
@@ -340,7 +375,7 @@ import java.util.concurrent.Executors;
     player.prepare();
     playerNeedsSource = false;
     reLayout(this);
-
+    loadVideoStarted = true;
     finishPlayerInitialization();
   }
 
@@ -543,4 +578,435 @@ import java.util.concurrent.Executors;
     initPlayer();
   }
 
+  @Override
+  public void onHostResume() {
+    Log.d(TAG, "onHostResume");
+    this.setPlayWhenReady(true);
+  }
+
+  @Override
+  public void onHostPause() {
+    Log.d(TAG, "onHostPause");
+    this.setPlayWhenReady(false);
+  }
+
+  @Override
+  public void onHostDestroy() {
+    Log.d(TAG, "onHostDestroy");
+    releasePlayer();
+  }
+
+  private void releasePlayer() {
+    Log.d(TAG, "releasePlayer");
+    player.release();
+    player.removeListener(this);
+    trackSelector = null;
+    player = null;
+    themedReactContext.removeLifecycleEventListener(this);
+    bandwidthMeter.removeEventListener(this);
+  }
+
+  @Override
+  public void onEvents(@NonNull Player player, Player.Events events) {
+    Log.d(TAG, "onEvents");
+    if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) || events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
+      int playbackState = player.getPlaybackState();
+      boolean playWhenReady = player.getPlayWhenReady();
+      String text = TAG + " onStateChanged: playWhenReady=" + playWhenReady + ", playbackState=";
+      switch (playbackState) {
+        case Player.STATE_IDLE:
+          text += "idle";
+          if (!player.getPlayWhenReady()) {
+            setKeepScreenOn(false);
+          }
+          break;
+        case Player.STATE_BUFFERING:
+          text += "buffering";
+          onBuffering(true);
+          setKeepScreenOn(preventsDisplaySleepDuringVideoPlayback);
+          break;
+        case Player.STATE_READY:
+          text += "ready";
+          onBuffering(false);
+          videoLoaded();
+          if (selectTrackWhenReady && isUsingContentResolution) {
+            selectTrackWhenReady = false;
+            setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
+          }
+          setKeepScreenOn(preventsDisplaySleepDuringVideoPlayback);
+          break;
+        case Player.STATE_ENDED:
+          text += "ended";
+          releasePlayer();
+          setKeepScreenOn(false);
+          break;
+        default:
+          text += "unknown";
+          break;
+      }
+      Log.d(TAG, text);
+    }
+  }
+
+  private void onBuffering(boolean buffering) {
+    Log.d(TAG, "onBuffering");
+    if (isBuffering == buffering) {
+      return;
+    }
+
+    isBuffering = buffering;
+  }
+
+  public void setBufferConfig(int newMinBufferMs, int newMaxBufferMs, int newBufferForPlaybackMs, int newBufferForPlaybackAfterRebufferMs, double newMaxHeapAllocationPercent, double newMinBackBufferMemoryReservePercent, double newMinBufferMemoryReservePercent) {
+    Log.d(TAG, "setBufferConfig");
+    minBufferMs = newMinBufferMs;
+    maxBufferMs = newMaxBufferMs;
+    bufferForPlaybackMs = newBufferForPlaybackMs;
+    bufferForPlaybackAfterRebufferMs = newBufferForPlaybackAfterRebufferMs;
+    maxHeapAllocationPercent = newMaxHeapAllocationPercent;
+    minBackBufferMemoryReservePercent = newMinBackBufferMemoryReservePercent;
+    minBufferMemoryReservePercent = newMinBufferMemoryReservePercent;
+    releasePlayer();
+    initPlayer();
+  }
+
+  private void videoLoaded() {
+    Log.d(TAG, "videoLoaded");
+    if (!player.isPlayingAd() && loadVideoStarted) {
+      loadVideoStarted = false;
+      if (videoTrackType != null) {
+        setSelectedVideoTrack(videoTrackType, videoTrackValue);
+      }
+      Format videoFormat = player.getVideoFormat();
+      int width = videoFormat != null ? videoFormat.width : 0;
+      int height = videoFormat != null ? videoFormat.height : 0;
+      String trackId = videoFormat != null ? videoFormat.id : "-1";
+
+      // Properties that must be accessed on the main thread
+      long duration = player.getDuration();
+      long currentPosition = player.getCurrentPosition();
+
+      if (this.contentStartTime != -1L) {
+        ExecutorService es = Executors.newSingleThreadExecutor();
+        es.execute(new Runnable() {
+          @Override
+          public void run() {
+            // To prevent ANRs caused by getVideoTrackInfo we run this on a different thread and notify the player only when we're done
+            ArrayList<VideoTrack> videoTracks = getVideoTrackInfoFromManifest();
+            if (videoTracks != null) {
+              isUsingContentResolution = true;
+            }
+
+          }
+        });
+        return;
+      }
+
+      ArrayList<VideoTrack> videoTracks = getVideoTrackInfo();
+    }
+  }
+
+  public void setSelectedVideoTrack(String type, Dynamic value) {
+    Log.d(TAG, "setSelectedVideoTrack");
+    videoTrackType = type;
+    videoTrackValue = value;
+    setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
+  }
+
+  public void setSelectedTrack(int trackType, String type, Dynamic value) {
+    Log.d(TAG, "setSelectedTrack");
+    if (player == null) return;
+    int rendererIndex = getTrackRendererIndex(trackType);
+    if (rendererIndex == C.INDEX_UNSET) {
+      return;
+    }
+    MappingTrackSelector.MappedTrackInfo info = trackSelector.getCurrentMappedTrackInfo();
+    if (info == null) {
+      return;
+    }
+
+    TrackGroupArray groups = info.getTrackGroups(rendererIndex);
+    int groupIndex = C.INDEX_UNSET;
+    List<Integer> tracks = new ArrayList<>();
+    tracks.add(0);
+
+    if (TextUtils.isEmpty(type)) {
+      type = "default";
+    }
+
+    if (type.equals("disabled")) {
+      disableTrack(rendererIndex);
+      return;
+    } else if (type.equals("language")) {
+      for (int i = 0; i < groups.length; ++i) {
+        Format format = groups.get(i).getFormat(0);
+        if (format.language != null && format.language.equals(value.asString())) {
+          groupIndex = i;
+          break;
+        }
+      }
+    } else if (type.equals("title")) {
+      for (int i = 0; i < groups.length; ++i) {
+        Format format = groups.get(i).getFormat(0);
+        if (format.id != null && format.id.equals(value.asString())) {
+          groupIndex = i;
+          break;
+        }
+      }
+    } else if (type.equals("index")) {
+      if (value.asInt() < groups.length) {
+        groupIndex = value.asInt();
+      }
+    } else if (type.equals("resolution")) {
+      int height = value.asInt();
+      for (int i = 0; i < groups.length; ++i) { // Search for the exact height
+        TrackGroup group = groups.get(i);
+        Format closestFormat = null;
+        int closestTrackIndex = -1;
+        boolean usingExactMatch = false;
+        for (int j = 0; j < group.length; j++) {
+          Format format = group.getFormat(j);
+          if (format.height == height) {
+            groupIndex = i;
+            tracks.set(0, j);
+            closestFormat = null;
+            closestTrackIndex = -1;
+            usingExactMatch = true;
+            break;
+          } else if (isUsingContentResolution) {
+            // When using content resolution rather than ads, we need to try and find the closest match if there is no exact match
+            if (closestFormat != null) {
+              if ((format.bitrate > closestFormat.bitrate || format.height > closestFormat.height) && format.height < height) {
+                // Higher quality match
+                closestFormat = format;
+                closestTrackIndex = j;
+              }
+            } else if(format.height < height) {
+              closestFormat = format;
+              closestTrackIndex = j;
+            }
+          }
+        }
+        // This is a fallback if the new period contains only higher resolutions than the user has selected
+        if (closestFormat == null && isUsingContentResolution && !usingExactMatch) {
+          // No close match found - so we pick the lowest quality
+          int minHeight = Integer.MAX_VALUE;
+          for (int j = 0; j < group.length; j++) {
+            Format format = group.getFormat(j);
+            if (format.height < minHeight) {
+              minHeight = format.height;
+              groupIndex = i;
+              tracks.set(0, j);
+            }
+          }
+        }
+        // Selecting the closest match found
+        if (closestFormat != null && closestTrackIndex != -1) {
+          // We found the closest match instead of an exact one
+          groupIndex = i;
+          tracks.set(0, closestTrackIndex);
+        }
+      }
+    }
+
+    if (groupIndex == C.INDEX_UNSET && trackType == C.TRACK_TYPE_VIDEO && groups.length != 0) { // Video auto
+      // Add all tracks as valid options for ABR to choose from
+      TrackGroup group = groups.get(0);
+      tracks = new ArrayList<>(group.length);
+      ArrayList<Integer> allTracks = new ArrayList<>(group.length);
+      groupIndex = 0;
+      for (int j = 0; j < group.length; j++) {
+        allTracks.add(j);
+      }
+
+      // Valiate list of all tracks and add only supported formats
+      int supportedFormatLength = 0;
+      ArrayList<Integer> supportedTrackList = new ArrayList<>();
+      for (int g = 0; g < allTracks.size(); g++) {
+        Format format = group.getFormat(g);
+        if (isFormatSupported(format)) {
+          supportedFormatLength++;
+        }
+      }
+      if (allTracks.size() == 1) {
+        // With only one tracks we can't remove any tracks so attempt to play it anyway
+        tracks = allTracks;
+      } else {
+        tracks =  new ArrayList<>(supportedFormatLength + 1);
+        for (int k = 0; k < allTracks.size(); k++) {
+          Format format = group.getFormat(k);
+          if (isFormatSupported(format)) {
+            tracks.add(allTracks.get(k));
+            supportedTrackList.add(allTracks.get(k));
+          }
+        }
+      }
+    }
+
+    if (groupIndex == C.INDEX_UNSET) {
+      disableTrack(rendererIndex);
+      return;
+    }
+
+    TrackSelectionOverride selectionOverride = new TrackSelectionOverride(groups.get(groupIndex), tracks);
+
+    DefaultTrackSelector.Parameters selectionParameters = trackSelector.getParameters()
+      .buildUpon()
+      .setRendererDisabled(rendererIndex, false)
+      .clearOverridesOfType(selectionOverride.getType())
+      .addOverride(selectionOverride)
+      .build();
+    trackSelector.setParameters(selectionParameters);
+  }
+
+  public void disableTrack(int rendererIndex) {
+    Log.d(TAG, "disableTrack");
+    DefaultTrackSelector.Parameters disableParameters = trackSelector.getParameters()
+      .buildUpon()
+      .setRendererDisabled(rendererIndex, true)
+      .build();
+    trackSelector.setParameters(disableParameters);
+  }
+
+  private ArrayList<VideoTrack> getVideoTrackInfo() {
+    Log.d(TAG, "getVideoTrackInfo");
+    ArrayList<VideoTrack> videoTracks = new ArrayList<>();
+    if (trackSelector == null) {
+      // Likely player is unmounting so no audio tracks are available anymore
+      return videoTracks;
+    }
+    MappingTrackSelector.MappedTrackInfo info = trackSelector.getCurrentMappedTrackInfo();
+    int index = getTrackRendererIndex(C.TRACK_TYPE_VIDEO);
+    if (info == null || index == C.INDEX_UNSET) {
+      return videoTracks;
+    }
+
+    TrackGroupArray groups = info.getTrackGroups(index);
+    for (int i = 0; i < groups.length; ++i) {
+      TrackGroup group = groups.get(i);
+
+      for (int trackIndex = 0; trackIndex < group.length; trackIndex++) {
+        Format format = group.getFormat(trackIndex);
+        if (isFormatSupported(format)) {
+          VideoTrack videoTrack = exoplayerVideoTrackToGenericVideoTrack(format, trackIndex);
+          videoTracks.add(videoTrack);
+        }
+      }
+    }
+    return videoTracks;
+  }
+
+  private boolean isFormatSupported(Format format) {
+    Log.d(TAG, "isFormatSupported");
+    int width = format.width == Format.NO_VALUE ? 0 : format.width;
+    int height = format.height == Format.NO_VALUE ? 0 : format.height;
+    float frameRate = format.frameRate == Format.NO_VALUE ? 0 : format.frameRate;
+    String mimeType = format.sampleMimeType;
+    if (mimeType == null) {
+      return true;
+    }
+    boolean isSupported;
+    try {
+      MediaCodecInfo codecInfo = MediaCodecUtil.getDecoderInfo(mimeType, false, false);
+      isSupported = codecInfo.isVideoSizeAndRateSupportedV21(width, height, frameRate);
+    } catch (Exception e) {
+      // Failed to get decoder info - assume it is supported
+      isSupported = true;
+    }
+    return isSupported;
+  }
+
+  private VideoTrack exoplayerVideoTrackToGenericVideoTrack(Format format, int trackIndex) {
+    Log.d(TAG, "exoplayerVideoTrackToGenericVideoTrack");
+    VideoTrack videoTrack = new VideoTrack();
+    videoTrack.setWidth(format.width == Format.NO_VALUE ? 0 : format.width);
+    videoTrack.setHeight(format.height == Format.NO_VALUE ? 0 : format.height);
+    videoTrack.setBitrate(format.bitrate == Format.NO_VALUE ? 0 : format.bitrate);
+    if (format.codecs != null) videoTrack.setCodecs(format.codecs);
+    videoTrack.setTrackId(format.id == null ? String.valueOf(trackIndex) : format.id);;
+    return videoTrack;
+  }
+
+  public int getTrackRendererIndex(int trackType) {
+    Log.d(TAG, "getTrackRendererIndex");
+    if (player != null) {
+      int rendererCount = player.getRendererCount();
+      for (int rendererIndex = 0; rendererIndex < rendererCount; rendererIndex++) {
+        if (player.getRendererType(rendererIndex) == trackType) {
+          return rendererIndex;
+        }
+      }
+    }
+    return C.INDEX_UNSET;
+  }
+
+  private ArrayList<VideoTrack> getVideoTrackInfoFromManifest() {
+    Log.d(TAG, "getVideoTrackInfoFromManifest");
+    return this.getVideoTrackInfoFromManifest(0);
+  }
+
+  // We need retry count to in case where minefest request fails from poor network conditions
+  @WorkerThread
+  private ArrayList<VideoTrack> getVideoTrackInfoFromManifest(int retryCount) {
+    Log.d(TAG, "getVideoTrackInfoFromManifest");
+    ExecutorService es = Executors.newSingleThreadExecutor();
+    final DataSource dataSource = this.mediaDataSourceFactory.createDataSource();
+    final Uri sourceUri = this.srcUri;
+    final long startTime = this.contentStartTime * 1000 - 100; // s -> ms with 100ms offset
+
+    Future<ArrayList<VideoTrack>> result = es.submit(new Callable<ArrayList<VideoTrack>>() {
+      final DataSource ds = dataSource;
+      final Uri uri = sourceUri;
+      final long startTimeUs = startTime * 1000; // ms -> us
+
+      public ArrayList<VideoTrack> call() {
+        ArrayList<VideoTrack> videoTracks = new ArrayList<>();
+        try  {
+          DashManifest manifest = DashUtil.loadManifest(this.ds, this.uri);
+          int periodCount = manifest.getPeriodCount();
+          for (int i = 0; i < periodCount; i++) {
+            Period period = manifest.getPeriod(i);
+            for (int adaptationIndex = 0; adaptationIndex < period.adaptationSets.size(); adaptationIndex++) {
+              AdaptationSet adaptation = period.adaptationSets.get(adaptationIndex);
+              if (adaptation.type != C.TRACK_TYPE_VIDEO) {
+                continue;
+              }
+              boolean hasFoundContentPeriod = false;
+              for (int representationIndex = 0; representationIndex < adaptation.representations.size(); representationIndex++) {
+                Representation representation = adaptation.representations.get(representationIndex);
+                Format format = representation.format;
+                if (isFormatSupported(format)) {
+                  if (representation.presentationTimeOffsetUs <= startTimeUs) {
+                    break;
+                  }
+                  hasFoundContentPeriod = true;
+                  VideoTrack videoTrack = exoplayerVideoTrackToGenericVideoTrack(format, representationIndex);
+                  videoTracks.add(videoTrack);
+                }
+              }
+              if (hasFoundContentPeriod) {
+                return videoTracks;
+              }
+            }
+          }
+        } catch (Exception e) {
+          Log.w(TAG, "error in getVideoTrackInfoFromManifest:" + e.getMessage());
+        }
+        return null;
+      }
+    });
+
+    try {
+      ArrayList<VideoTrack> results = result.get(3000, TimeUnit.MILLISECONDS);
+      if (results == null && retryCount < 1) {
+        return this.getVideoTrackInfoFromManifest(++retryCount);
+      }
+      es.shutdown();
+      return results;
+    } catch (Exception e) {
+      Log.w(TAG, "error in getVideoTrackInfoFromManifest handling request:" + e.getMessage());
+    }
+
+    return null;
+  }
 }
