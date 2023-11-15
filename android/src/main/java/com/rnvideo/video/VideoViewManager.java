@@ -32,7 +32,7 @@ public class VideoViewManager extends SimpleViewManager<VideoView> {
 
   @Override
   public String getName() {
-    return VideoViewManager.REACT_PACKAGE;
+    return REACT_PACKAGE;
   }
 
   @SuppressLint("UnsafeOptInUsageError")

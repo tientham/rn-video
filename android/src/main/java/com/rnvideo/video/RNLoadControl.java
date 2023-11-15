@@ -42,7 +42,7 @@ public class RNLoadControl extends DefaultLoadControl {
                 prioritizeTimeOverSizeThresholds,
                 backBufferDurationMs,
                 retainBackBufferFromKeyframe);
-
+        Log.d(TAG, "RNLoadControl START");
         this.minBufferMemoryReservePercent = minBufferMemoryReservePercent;
         runtime = Runtime.getRuntime();
         ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
@@ -52,27 +52,30 @@ public class RNLoadControl extends DefaultLoadControl {
     @SuppressLint("UnsafeOptInUsageError")
     @Override
     public boolean shouldContinueLoading(long playbackPositionUs, long bufferedDurationUs, float playbackSpeed) {
-        int loadedBytes = getAllocator().getTotalBytesAllocated();
-        boolean isHeapReached = availableHeapInBytes > 0 && loadedBytes >= availableHeapInBytes;
-        if (isHeapReached) {
-            return false;
-        }
+      Log.d(TAG, "shouldContinueLoading");
+      int loadedBytes = getAllocator().getTotalBytesAllocated();
+      boolean isHeapReached = availableHeapInBytes > 0 && loadedBytes >= availableHeapInBytes;
+      if (isHeapReached) {
+        Log.d(TAG, "shouldContinueLoading isHeapReached true");
+        return false;
+      }
 
-        long usedMemory = runtime.totalMemory() - runtime.freeMemory();
-        long freeMemory = runtime.maxMemory() - usedMemory;
-        long reserveMemory = (long) this.minBufferMemoryReservePercent * runtime.maxMemory();
-        long bufferedMs = bufferedDurationUs / (long)1000;
+      long usedMemory = runtime.totalMemory() - runtime.freeMemory();
+      long freeMemory = runtime.maxMemory() - usedMemory;
+      long reserveMemory = (long) this.minBufferMemoryReservePercent * runtime.maxMemory();
+      long bufferedMs = bufferedDurationUs / (long)1000;
 
-        if (reserveMemory > freeMemory && bufferedMs > 2000) {
-            // do not have memory => stop buffering to open rooms for others
-            return false;
-        }
+      if (reserveMemory > freeMemory && bufferedMs > 2000) {
+        Log.d(TAG, "shouldContinueLoading stop buffering to open rooms for others");
+        // do not have memory => stop buffering to open rooms for others
+        return false;
+      }
 
-        if (runtime.freeMemory() == 0) {
-            Log.d(TAG, "Free memory = 0 => forcing garbage collection");
-            runtime.gc();
-            return false;
-        }
-        return super.shouldContinueLoading(playbackPositionUs, bufferedDurationUs, playbackSpeed);
+      if (runtime.freeMemory() == 0) {
+        Log.d(TAG, "shouldContinueLoading Free memory = 0 => forcing garbage collection");
+        runtime.gc();
+        return false;
+      }
+      return super.shouldContinueLoading(playbackPositionUs, bufferedDurationUs, playbackSpeed);
     }
 }

@@ -1,6 +1,7 @@
 package com.rnvideo.video;
 
 import android.annotation.SuppressLint;
+import android.util.Log;
 
 import androidx.annotation.OptIn;
 import androidx.media3.common.C;
@@ -10,15 +11,18 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 
 @UnstableApi public final class ReactExoplayerLoadErrorHandlingPolicy extends DefaultLoadErrorHandlingPolicy {
+  private final String TAG = "RELEHP";
   private final int minLoadRetryCount;
 
   public @OptIn(markerClass = UnstableApi.class) ReactExoplayerLoadErrorHandlingPolicy(int minLoadRetryCount) {
     super(minLoadRetryCount);
+    Log.d(TAG, "ReactExoplayerLoadErrorHandlingPolicy");
     this.minLoadRetryCount = minLoadRetryCount;
   }
 
   @Override
   public long getRetryDelayMsFor(LoadErrorHandlingPolicy.LoadErrorInfo loadErrorInfo) {
+    Log.d(TAG, "getRetryDelayMsFor");
     @SuppressLint("UnsafeOptInUsageError") String errorMessage = loadErrorInfo.exception.getMessage();
 
     if (
@@ -36,6 +40,7 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 
   @Override
   public int getMinimumLoadableRetryCount(int dataType) {
+    Log.d(TAG, "getMinimumLoadableRetryCount");
     return Integer.MAX_VALUE;
   }
 }
