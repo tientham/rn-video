@@ -4,22 +4,37 @@
 
 package com.rnvideo.video;
 
+import static androidx.media3.common.C.CONTENT_TYPE_DASH;
+import static androidx.media3.common.C.CONTENT_TYPE_HLS;
 import static androidx.media3.common.C.CONTENT_TYPE_OTHER;
+import static androidx.media3.common.C.CONTENT_TYPE_SS;
 import static androidx.media3.common.C.TIME_END_OF_SOURCE;
 
 import com.facebook.react.uimanager.ThemedReactContext;
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.net.Uri;
 import android.os.Handler;
+import android.text.TextUtils;
 import android.view.View;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DataSource;
+import androidx.media3.exoplayer.dash.DashMediaSource;
+import androidx.media3.exoplayer.dash.DefaultDashChunkSource;
+import androidx.media3.exoplayer.drm.DrmSessionEventListener;
 import androidx.media3.exoplayer.drm.MediaDrmCallback;
+import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.smoothstreaming.DefaultSsChunkSource;
+import androidx.media3.exoplayer.smoothstreaming.SsMediaSource;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.datasource.HttpDataSource;
@@ -47,12 +62,26 @@ import androidx.media3.ui.PlayerView;
 import androidx.media3.common.Player;
 
 
+import java.net.CookieManager;
+import java.net.CookiePolicy;
 import java.util.HashMap;
 import java.util.UUID;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
-@UnstableApi public class VideoView extends PlayerView implements BandwidthMeter.EventListener {
+@UnstableApi public class VideoView extends PlayerView implements
+  BandwidthMeter.EventListener,
+  DrmSessionEventListener,
+  Player.Listener {
+
+  private static final CookieManager DEFAULT_COOKIE_MANAGER;
+
+  static {
+    DEFAULT_COOKIE_MANAGER = new CookieManager();
+    DEFAULT_COOKIE_MANAGER.setCookiePolicy(CookiePolicy.ACCEPT_ORIGINAL_SERVER);
+  }
 
   private final ThemedReactContext themedReactContext;
   private String source;
@@ -81,18 +110,20 @@ import java.util.Map;
 
   private ExoPlayer player;
   private DefaultTrackSelector trackSelector;
-
+  private boolean playerNeedsSource;
   private Map<String, String> requestHeaders;
 
   private Uri srcUri;
   private String extension;
   private int minLoadRetryCount = 3;
+  private float rate = 1f;
 
   private long startTimeMs = -1;
   private long endTimeMs = -1;
   private boolean hasDrmFailed = false;
   private UUID drmUUID = null;
   private String drmLicenseUrl = null;
+  private String[] drmLicenseHeader = null;
   private boolean disableDisconnectError;
   public VideoView(ThemedReactContext ctx, RnVideoConfig config) {
     super(ctx);
@@ -119,6 +150,7 @@ import java.util.Map;
   }
 
   private void initPlayer() {
+    Activity activity = themedReactContext.getCurrentActivity();
     new Handler().postDelayed(new Runnable() {
       @Override
       public void run() {
@@ -128,10 +160,47 @@ import java.util.Map;
             initializePlayerCore(VideoView.this);
           }
           Log.d(TAG, "initPlayer srcUri" + srcUri);
-          if (srcUri != null) {
+          if (playerNeedsSource && srcUri != null) {
+            invalidateAspectRatio();
+            // DRM session manager creation must be done on a different thread to prevent crashes so we start a new thread
+            ExecutorService es = Executors.newSingleThreadExecutor();
+            es.execute(new Runnable() {
+              @Override
+              public void run() {
+                // DRM initialization must run on a different thread
+                DrmSessionManager drmSessionManager = initializePlayerDrm(VideoView.this);
+                if (drmSessionManager == null && VideoView.this.drmUUID != null) {
+                  // Failed to intialize DRM session manager - cannot continue
+                  Log.e(TAG, "Failed to initialize DRM Session Manager Framework!");
+
+                  return;
+                }
+
+                if (activity == null) {
+                  Log.e(TAG, "Failed to initialize Player!");
+                  return;
+                }
+
+                // Initialize handler to run on the main thread
+                activity.runOnUiThread(new Runnable() {
+                  public void run() {
+                    try {
+                      // Source initialization must run on the main thread
+                      initializePlayerSource(VideoView.this, drmSessionManager);
+                    } catch (Exception ex) {
+                      VideoView.this.playerNeedsSource = true;
+                      Log.e(TAG, "Failed to initialize Player!");
+                      Log.e(TAG, ex.toString());
+                    }
+                  }
+                });
+              }
+            });
+          } else if (srcUri != null) {
             initializePlayerSource(VideoView.this, null);
           }
         } catch (Exception ex) {
+          VideoView.this.playerNeedsSource = true;
           ex.printStackTrace();
           Log.d(TAG, "initPlayer " + ex.toString());
         }
@@ -152,6 +221,38 @@ import java.util.Map;
         String trackId = videoFormat != null ? videoFormat.id : "-1";
         // eventEmitter.bandwidthReport(bitrateEstimate, height, width, trackId);
       }
+    }
+  }
+
+  @Override
+  public void onPlayerError(@NonNull PlaybackException e) {
+    String errorString = "ExoPlaybackException: " + PlaybackException.getErrorCodeName(e.errorCode);
+    String errorCode = "2" + String.valueOf(e.errorCode);
+    switch(e.errorCode) {
+      case PlaybackException.ERROR_CODE_DRM_DEVICE_REVOKED:
+      case PlaybackException.ERROR_CODE_DRM_LICENSE_ACQUISITION_FAILED:
+      case PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED:
+      case PlaybackException.ERROR_CODE_DRM_SYSTEM_ERROR:
+      case PlaybackException.ERROR_CODE_DRM_UNSPECIFIED:
+        if (!hasDrmFailed) {
+          // When DRM fails to reach the app level certificate server it will fail with a source error so we assume that it is DRM related and try one more time
+          hasDrmFailed = true;
+          playerNeedsSource = true;
+          updateResumePosition();
+          initPlayer();
+          setPlayWhenReady(true);
+          return;
+        }
+        break;
+      default:
+        break;
+    }
+    playerNeedsSource = true;
+    if (isBehindLiveWindow(e)) {
+      clearResumePosition();
+      initPlayer();
+    } else {
+      updateResumePosition();
     }
   }
 
@@ -191,8 +292,28 @@ import java.util.Map;
 
     this.player.setRepeatMode(Player.REPEAT_MODE_ALL);
     this.player.setVolume(0.f);
-
     setPlayWhenReady(true);
+    playerNeedsSource = true;
+
+    PlaybackParameters params = new PlaybackParameters(rate, 1f);
+    player.setPlaybackParameters(params);
+  }
+
+  private DrmSessionManager initializePlayerDrm(VideoView self) {
+    DrmSessionManager drmSessionManager = null;
+    if (self.drmUUID != null) {
+      try {
+        drmSessionManager = self.buildDrmSessionManager(self.drmUUID, self.drmLicenseUrl,
+          self.drmLicenseHeader);
+      } catch (UnsupportedDrmException e) {
+        int errorStringId = Util.SDK_INT < 18 ? R.string.error_drm_not_supported
+          : (e.reason == UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME
+          ? R.string.error_drm_unsupported_scheme : R.string.error_drm_unknown);
+
+        return null;
+      }
+    }
+    return drmSessionManager;
   }
 
   private void initializePlayerSource(VideoView self, DrmSessionManager drmSessionManager) {
@@ -209,7 +330,7 @@ import java.util.Map;
     }
     player.setMediaSource(mediaSource);
     player.prepare();
-
+    playerNeedsSource = false;
     reLayout(this);
 
     finishPlayerInitialization();
@@ -273,6 +394,8 @@ import java.util.Map;
     if (uri == null) {
       throw new IllegalStateException("Invalid video uri");
     }
+    int type = Util.inferContentType(!TextUtils.isEmpty(overrideExtension) ? "." + overrideExtension
+      : uri.getLastPathSegment());
     config.setDisableDisconnectError(this.disableDisconnectError);
 
     MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(uri);
@@ -290,11 +413,45 @@ import java.util.Map;
     } else {
       drmProvider = new DefaultDrmSessionManagerProvider();
     }
-    mediaSource = new ProgressiveMediaSource.Factory(mediaDataSourceFactory)
-                    .setDrmSessionManagerProvider(drmProvider)
-                    .setLoadErrorHandlingPolicy(
-                      config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
-                    ).createMediaSource(mediaItem);
+    switch (type) {
+      case CONTENT_TYPE_SS:
+        mediaSource = new SsMediaSource.Factory(
+          new DefaultSsChunkSource.Factory(mediaDataSourceFactory),
+          buildDataSourceFactory(false)
+        ).setDrmSessionManagerProvider(drmProvider)
+          .setLoadErrorHandlingPolicy(
+            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
+          ).createMediaSource(mediaItem);
+        break;
+      case CONTENT_TYPE_DASH:
+        mediaSource = new DashMediaSource.Factory(
+          new DefaultDashChunkSource.Factory(mediaDataSourceFactory),
+          buildDataSourceFactory(false)
+        ).setDrmSessionManagerProvider(drmProvider)
+          .setLoadErrorHandlingPolicy(
+            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
+          ).createMediaSource(mediaItem);
+        break;
+      case CONTENT_TYPE_HLS:
+        mediaSource = new HlsMediaSource.Factory(
+          mediaDataSourceFactory
+        ).setDrmSessionManagerProvider(drmProvider)
+          .setLoadErrorHandlingPolicy(
+            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
+          ).createMediaSource(mediaItem);
+        break;
+      case CONTENT_TYPE_OTHER:
+        mediaSource = new ProgressiveMediaSource.Factory(
+          mediaDataSourceFactory
+        ).setDrmSessionManagerProvider(drmProvider)
+          .setLoadErrorHandlingPolicy(
+            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
+          ).createMediaSource(mediaItem);
+        break;
+      default: {
+        throw new IllegalStateException("Unsupported type: " + type);
+      }
+    }
 
     if (startTimeMs >= 0 && endTimeMs >= 0){
       return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
