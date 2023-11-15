@@ -11,6 +11,8 @@ import static androidx.media3.common.C.CONTENT_TYPE_SS;
 import static androidx.media3.common.C.TIME_END_OF_SOURCE;
 
 import com.facebook.react.uimanager.ThemedReactContext;
+import com.rnvideo.R;
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.net.Uri;
@@ -161,7 +163,7 @@ import java.util.concurrent.Executors;
           }
           Log.d(TAG, "initPlayer srcUri" + srcUri);
           if (playerNeedsSource && srcUri != null) {
-            invalidateAspectRatio();
+            invalidate();
             // DRM session manager creation must be done on a different thread to prevent crashes so we start a new thread
             ExecutorService es = Executors.newSingleThreadExecutor();
             es.execute(new Runnable() {
@@ -238,7 +240,7 @@ import java.util.concurrent.Executors;
           // When DRM fails to reach the app level certificate server it will fail with a source error so we assume that it is DRM related and try one more time
           hasDrmFailed = true;
           playerNeedsSource = true;
-          updateResumePosition();
+          // updateResumePosition();
           initPlayer();
           setPlayWhenReady(true);
           return;
@@ -248,12 +250,7 @@ import java.util.concurrent.Executors;
         break;
     }
     playerNeedsSource = true;
-    if (isBehindLiveWindow(e)) {
-      clearResumePosition();
-      initPlayer();
-    } else {
-      updateResumePosition();
-    }
+    initPlayer();
   }
 
   private void initializePlayerCore(VideoView self) {
@@ -306,9 +303,8 @@ import java.util.concurrent.Executors;
         drmSessionManager = self.buildDrmSessionManager(self.drmUUID, self.drmLicenseUrl,
           self.drmLicenseHeader);
       } catch (UnsupportedDrmException e) {
-        int errorStringId = Util.SDK_INT < 18 ? R.string.error_drm_not_supported
-          : (e.reason == UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME
-          ? R.string.error_drm_unsupported_scheme : R.string.error_drm_unknown);
+        int errorStringId = e.reason == UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME
+          ? R.string.error_drm_unsupported_scheme : R.string.error_drm_unknown;
 
         return null;
       }
