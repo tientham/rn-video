@@ -18,7 +18,7 @@ const styles = StyleSheet.create({
 });
 const defaultStyle = styles.video;
 
-export interface ThreeSecRnVideoProps {
+export interface ThreeSecVideoRnVideoProps {
   source?: string;
   isPlay?: boolean;
   volume?: number;
@@ -28,9 +28,9 @@ export interface ThreeSecRnVideoProps {
   isReplay?: boolean;
 }
 
-export default class ThreeSecRnVideo extends BaseComponent<ThreeSecRnVideoProps> {
-  private labelLog = '[ThreeSecRnVideo]';
-  static displayName = 'ThreeSecRnVideo';
+export default class ThreeSecVideoRnVideo extends BaseComponent<ThreeSecVideoRnVideoProps> {
+  private labelLog = '[ThreeSecVideoRnVideo]';
+  static displayName = 'ThreeSecVideoRnVideo';
 
   static defaultProps = {
     source: isAndroid() ? '' : '',
@@ -40,7 +40,7 @@ export default class ThreeSecRnVideo extends BaseComponent<ThreeSecRnVideoProps>
     isReplay: true,
   };
 
-  constructor(props: ThreeSecRnVideoProps) {
+  constructor(props: ThreeSecVideoRnVideoProps) {
     super(props);
     let labelLogLocal = '';
     if (__DEV__) {
@@ -76,7 +76,7 @@ export default class ThreeSecRnVideo extends BaseComponent<ThreeSecRnVideoProps>
         playerHeight={playerHeight}
         playerWidth={playerWidth}
         ref={(ref) =>
-          this.refMethod(ref as (ThreeSecRnVideo & NativeMethods) | null)
+          this.refMethod(ref as (ThreeSecVideoRnVideo & NativeMethods) | null)
         }
       />
     );

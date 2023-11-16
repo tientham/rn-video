@@ -4,16 +4,19 @@
 
 import BaseComponent from './base/BaseComponent';
 import RnVideo from './elements/RnVideo';
-import ThreeSecRnVideo from './elements/ThreeSecRnVideo';
+import ThreeSecVideoRnVideo from './elements/ThreeSecVideoRnVideo';
+import ThreeSecPlayerRnVideo from './elements/ThreeSecPlayerRnVideo';
 import { DroidRnVideo, DroidThreeSecRnVideo } from './fabric';
 
 export type { RnVideoProps } from './elements/RnVideo';
-export type { ThreeSecRnVideoProps } from './elements/ThreeSecRnVideo';
+export type { ThreeSecVideoRnVideoProps } from './elements/ThreeSecVideoRnVideo';
+export type { ThreeSecPlayerRnVideoProps } from './elements/ThreeSecPlayerRnVideo';
 
 export {
   BaseComponent,
   RnVideo,
-  ThreeSecRnVideo,
+  ThreeSecVideoRnVideo,
+  ThreeSecPlayerRnVideo,
   DroidRnVideo,
   DroidThreeSecRnVideo,
 };
