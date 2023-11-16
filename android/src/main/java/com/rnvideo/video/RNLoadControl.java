@@ -11,10 +11,12 @@ import android.util.Log;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
 
+import com.facebook.react.uimanager.ThemedReactContext;
+
 @SuppressLint("UnsafeOptInUsageError")
 public class RNLoadControl extends DefaultLoadControl {
     private final String TAG = "RNLoadControl";
-    private int availableHeapInBytes;
+    private final int availableHeapInBytes;
     private double minBufferMemoryReservePercent;
     private final Runtime runtime;
 
@@ -45,7 +47,7 @@ public class RNLoadControl extends DefaultLoadControl {
         Log.d(TAG, "RNLoadControl START");
         this.minBufferMemoryReservePercent = minBufferMemoryReservePercent;
         runtime = Runtime.getRuntime();
-        ActivityManager activityManager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        ActivityManager activityManager = (ActivityManager) ((ThemedReactContext)context).getSystemService(ThemedReactContext.ACTIVITY_SERVICE);
         availableHeapInBytes = (int) Math.floor(activityManager.getMemoryClass() * maxHeapAllocationPercent * 1024 * 1024);
     }
 

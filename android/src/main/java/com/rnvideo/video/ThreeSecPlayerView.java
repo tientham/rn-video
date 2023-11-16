@@ -13,11 +13,13 @@ import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.WorkerThread;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
@@ -30,6 +32,11 @@ import androidx.media3.datasource.DataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.dash.DashUtil;
+import androidx.media3.exoplayer.dash.manifest.AdaptationSet;
+import androidx.media3.exoplayer.dash.manifest.DashManifest;
+import androidx.media3.exoplayer.dash.manifest.Period;
+import androidx.media3.exoplayer.dash.manifest.Representation;
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.ClippingMediaSource;
@@ -44,6 +51,7 @@ import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
 import androidx.media3.exoplayer.upstream.BandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
+import androidx.media3.extractor.mp4.Track;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import com.facebook.react.bridge.Dynamic;
 import com.facebook.react.uimanager.ThemedReactContext;
@@ -54,6 +62,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Nullable;
 
@@ -104,7 +117,7 @@ import javax.annotation.Nullable;
   private float rate = 1f;
   private final RnVideoConfig config;
   private long startTimeMs = 0;
-  private long endTimeMs = 3;
+  private long endTimeMs = -1;
   private boolean disableDisconnectError;
   private boolean isBuffering;
   private boolean preventsDisplaySleepDuringVideoPlayback = true;
@@ -122,7 +135,7 @@ import javax.annotation.Nullable;
   private final AspectRatioFrameLayout layout;
   private int maxBitRate = 0;
   private float audioVolume = 1f;
-
+  private long seekTime = C.TIME_UNSET;
   public ThreeSecPlayerView(Context context) {
     this(context, null);
   }
@@ -149,15 +162,6 @@ import javax.annotation.Nullable;
     layout = new AspectRatioFrameLayout(context);
     layout.setLayoutParams(aspectRatioParams);
 
-//    shutterView = new View(getContext());
-//    shutterView.setLayoutParams(layoutParams);
-//    shutterView.setBackgroundColor(ContextCompat.getColor(context, android.R.color.black));
-
-//    subtitleLayout = new SubtitleView(context);
-//    subtitleLayout.setLayoutParams(layoutParams);
-//    subtitleLayout.setUserDefaultStyle();
-//    subtitleLayout.setUserDefaultTextSize();
-
     updateSurfaceView();
 
     adOverlayFrameLayout = new FrameLayout(context);
@@ -178,14 +182,18 @@ import javax.annotation.Nullable;
 
   private void clearVideoView() {
     Log.d(TAG, "clearVideoView");
-    if (surfaceView instanceof SurfaceView) {
+    if (surfaceView instanceof TextureView) {
+      player.clearVideoTextureView((TextureView) surfaceView);
+    } else if (surfaceView instanceof SurfaceView) {
       this.player.clearVideoSurfaceView((SurfaceView) surfaceView);
     }
   }
 
   private void setVideoView() {
     Log.d(TAG, "setVideoView");
-    if (surfaceView instanceof SurfaceView) {
+    if (surfaceView instanceof TextureView) {
+      player.setVideoTextureView((TextureView) surfaceView);
+    } else if (surfaceView instanceof SurfaceView) {
       player.setVideoSurfaceView((SurfaceView) surfaceView);
     }
   }
@@ -200,10 +208,6 @@ import javax.annotation.Nullable;
       layout.removeViewAt(0);
     }
     layout.addView(surfaceView, 0, layoutParams);
-
-    if (this.player != null) {
-      setVideoView();
-    }
   }
 
   @Override
@@ -214,15 +218,13 @@ import javax.annotation.Nullable;
 
   public void setPlayer(ExoPlayer player) {
     Log.d(TAG, "setPlayer player: " + player);
-    if (this.player == player) {
-      return;
-    }
     if (this.player != null) {
       this.player.removeListener(innerPlayerListener);
       clearVideoView();
     }
     this.player = player;
     if (player != null) {
+      Log.d(TAG, "==> setVideoView");
       setVideoView();
       player.addListener(innerPlayerListener);
     }
@@ -252,23 +254,22 @@ import javax.annotation.Nullable;
   };
 
   public void setSource(@Nullable String source) {
-    Log.d(TAG, "initializePlayerSource");
+    Log.d(TAG, "setSource");
     MediaSource mediaSource = buildMediaSource(Uri.parse(source), startTimeMs, endTimeMs);
     // wait for player to be set
     while (player == null) {
       try {
-        Log.d(TAG, "initializePlayerSource with player is null");
+        Log.d(TAG, "setSource with player is null");
         wait();
       } catch (InterruptedException ex) {
         Thread.currentThread().interrupt();
         Log.e(TAG, ex.toString());
       }
     }
-    player.setMediaSource(mediaSource);
-    player.prepare();
-    playerNeedsSource = false;
-    reLayout(this);
-    loadVideoStarted = true;
+    // player.prepare();
+    // playerNeedsSource = false;
+    // reLayout(this);
+    // loadVideoStarted = true;
   }
 
   private MediaSource buildMediaSource(Uri uri, long startTimeMs, long endTimeMs) {
@@ -286,8 +287,8 @@ import javax.annotation.Nullable;
       .setLoadErrorHandlingPolicy(config.buildLoadErrorHandlingPolicy(minLoadRetryCount))
       .createMediaSource(mediaItem);
 
-    // return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
-    return mediaSource;
+    return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
+    // return mediaSource;
 //    if (startTimeMs >= 0 && endTimeMs >= 3) {
 //      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, 3 * 1000);
 //    } else if (startTimeMs >= 0) {
@@ -334,20 +335,36 @@ import javax.annotation.Nullable;
 
     MediaSource.Factory mediaSourceFactory = new DefaultMediaSourceFactory(mediaDataSourceFactory);
 
-    player = new ExoPlayer.Builder(context)
+    player = new ExoPlayer.Builder(context, renderersFactory)
       .setTrackSelector(trackSelector)
       .setBandwidthMeter(bandwidthMeter)
       .setLoadControl(loadControl)
       .setMediaSourceFactory(mediaSourceFactory)
       .build();
     player.addListener(innerPlayerListener);
-    player.setVolume(0.f);
+    // player.setVolume(0.f);
     setPlayer(player);
     bandwidthMeter.addEventListener(new Handler(), this);
     player.setPlayWhenReady(true);
     // player.setRepeatMode(Player.REPEAT_MODE_ONE);
     playerNeedsSource = true;
 
+    config.setDisableDisconnectError(this.disableDisconnectError);
+
+    MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(Uri.parse("http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"));
+
+    MediaItem mediaItem = mediaItemBuilder.build();
+    MediaSource mediaSource = new ProgressiveMediaSource
+      .Factory(mediaDataSourceFactory)
+      .setLoadErrorHandlingPolicy(config.buildLoadErrorHandlingPolicy(minLoadRetryCount))
+      .createMediaSource(mediaItem);
+
+    ClippingMediaSource clippingMediaSource = new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
+    player.setMediaSource(mediaSource);
+    player.prepare();
+
+    reLayout(this);
+    loadVideoStarted = true;
 //    PlaybackParameters params = new PlaybackParameters(rate, 1f);
 //    player.setPlaybackParameters(params);
     // changeAudioOutput(audioOutput);
@@ -393,18 +410,20 @@ import javax.annotation.Nullable;
             break;
           case Player.STATE_READY:
             text += "ready";
-//            if (selectTrackWhenReady && isUsingContentResolution) {
-//              selectTrackWhenReady = false;
-//              setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
-//            }
-            if (audioTrackType != null) {
-              setSelectedAudioTrack(audioTrackType, audioTrackValue);
+            videoLoaded();
+            if (selectTrackWhenReady && isUsingContentResolution) {
+              selectTrackWhenReady = false;
+              setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
             }
+
+//            if (audioTrackType != null) {
+//              setSelectedAudioTrack(audioTrackType, audioTrackValue);
+//            }
             setKeepScreenOn(preventsDisplaySleepDuringVideoPlayback);
             break;
           case Player.STATE_ENDED:
             text += "ended";
-            // releasePlayer();
+            releasePlayer();
             setKeepScreenOn(false);
             break;
           default:
@@ -415,6 +434,42 @@ import javax.annotation.Nullable;
       }
     }
 
+    public void setSelectedVideoTrack(String type, Dynamic value) {
+      videoTrackType = type;
+      videoTrackValue = value;
+      setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
+    }
+
+    private void videoLoaded() {
+      if (!player.isPlayingAd() && loadVideoStarted) {
+        loadVideoStarted = false;
+        if (audioTrackType != null) {
+          setSelectedAudioTrack(audioTrackType, audioTrackValue);
+        }
+        if (videoTrackType != null) {
+          setSelectedVideoTrack(videoTrackType, videoTrackValue);
+        }
+        isUsingContentResolution = false;
+
+
+      }
+    }
+
+    @Override
+    public void onPlaybackStateChanged(int playbackState) {
+      if (playbackState == Player.STATE_READY && seekTime != C.TIME_UNSET) {
+        seekTime = C.TIME_UNSET;
+        if (isUsingContentResolution) {
+          // We need to update the selected track to make sure that it still matches user selection if track list has changed in this period
+          setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
+        }
+      }
+    }
+  }
+
+  private void reloadSource() {
+    playerNeedsSource = true;
+    initializePlayerCore();
   }
 
   public void setSelectedTrack(int trackType, String type, Dynamic value) {
