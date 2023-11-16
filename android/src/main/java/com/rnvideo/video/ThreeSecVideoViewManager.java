@@ -13,7 +13,7 @@ import com.facebook.react.uimanager.ThemedReactContext;
 import javax.annotation.Nullable;
 
 public class ThreeSecVideoViewManager extends SimpleViewManager<ThreeSecVideoView> {
-  private static final String REACT_PACKAGE = "RnVideo-3s";
+  private static final String REACT_PACKAGE = "RnVideo-3sv";
   private final String SET_SOURCE = "source";
   private final String SET_PLAY = "play";
   private final String SET_REPLAY = "replay";
