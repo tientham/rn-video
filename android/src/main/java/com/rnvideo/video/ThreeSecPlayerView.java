@@ -22,6 +22,7 @@ import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -37,6 +38,7 @@ import androidx.media3.exoplayer.upstream.DefaultAllocator;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import com.facebook.react.bridge.Dynamic;
+import com.facebook.react.uimanager.ThemedReactContext;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
@@ -54,7 +56,6 @@ import javax.annotation.Nullable;
     DEFAULT_COOKIE_MANAGER = new CookieManager();
     DEFAULT_COOKIE_MANAGER.setCookiePolicy(CookiePolicy.ACCEPT_ORIGINAL_SERVER);
   }
-
   private View surfaceView;
   private String source;
   private final String TAG = "RnVideo-3sp";
@@ -153,7 +154,10 @@ import javax.annotation.Nullable;
 
     addViewInLayout(layout, 0, aspectRatioParams);
 
-    this.config = new RnVideoConfigImpl(context);
+    config = new RnVideoConfigImpl(context);
+    bandwidthMeter = config.getBandwidthMeter();
+
+    mediaDataSourceFactory = buildDataSourceFactory(true);
 
     initializePlayerCore();
   }
@@ -329,6 +333,20 @@ import javax.annotation.Nullable;
   @Override
   public void onBandwidthSample(int elapsedMs, long bytesTransferred, long bitrateEstimate) {
     Log.d(TAG, "onBandwidthSample");
+  }
+
+  private DataSource.Factory buildDataSourceFactory(boolean useBandwidthMeter) {
+    Log.d(TAG, "buildDataSourceFactory useBandwidthMeter: " + useBandwidthMeter);
+    return DataSourceUtil.getDefaultDataSourceFactory((ThemedReactContext) context,
+      useBandwidthMeter ? bandwidthMeter : null, requestHeaders);
+  }
+
+  private HttpDataSource.Factory buildHttpDataSourceFactory(boolean useBandwidthMeter) {
+    Log.d(TAG, "buildHttpDataSourceFactory useBandwidthMeter: " + useBandwidthMeter);
+    return DataSourceUtil.getDefaultHttpDataSourceFactory(
+      (ThemedReactContext) context,
+      useBandwidthMeter ? bandwidthMeter : null,
+      requestHeaders);
   }
 
   private final class InnerPlayerListener implements Player.Listener {
