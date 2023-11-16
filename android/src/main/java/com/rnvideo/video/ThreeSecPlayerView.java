@@ -342,7 +342,7 @@ import javax.annotation.Nullable;
       .setMediaSourceFactory(mediaSourceFactory)
       .build();
     player.addListener(innerPlayerListener);
-    // player.setVolume(0.f);
+    player.setVolume(0.f);
     setPlayer(player);
     bandwidthMeter.addEventListener(new Handler(), this);
     player.setPlayWhenReady(true);
