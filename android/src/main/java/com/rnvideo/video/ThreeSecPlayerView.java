@@ -176,8 +176,6 @@ import javax.annotation.Nullable;
     bandwidthMeter = config.getBandwidthMeter();
 
     mediaDataSourceFactory = buildDataSourceFactory();
-
-    initializePlayerCore();
   }
 
   private void clearVideoView() {
@@ -255,46 +253,7 @@ import javax.annotation.Nullable;
 
   public void setSource(@Nullable String source) {
     Log.d(TAG, "setSource");
-    MediaSource mediaSource = buildMediaSource(Uri.parse(source), startTimeMs, endTimeMs);
-    // wait for player to be set
-    while (player == null) {
-      try {
-        Log.d(TAG, "setSource with player is null");
-        wait();
-      } catch (InterruptedException ex) {
-        Thread.currentThread().interrupt();
-        Log.e(TAG, ex.toString());
-      }
-    }
-    // player.prepare();
-    // playerNeedsSource = false;
-    // reLayout(this);
-    // loadVideoStarted = true;
-  }
-
-  private MediaSource buildMediaSource(Uri uri, long startTimeMs, long endTimeMs) {
-    Log.d(TAG, "buildMediaSource - uri: " + uri);
-    if (uri == null) {
-      throw new IllegalStateException("Invalid video uri");
-    }
-    config.setDisableDisconnectError(this.disableDisconnectError);
-
-    MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(uri);
-
-    MediaItem mediaItem = mediaItemBuilder.build();
-    MediaSource mediaSource = new ProgressiveMediaSource
-      .Factory(mediaDataSourceFactory)
-      .setLoadErrorHandlingPolicy(config.buildLoadErrorHandlingPolicy(minLoadRetryCount))
-      .createMediaSource(mediaItem);
-
-    return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
-    // return mediaSource;
-//    if (startTimeMs >= 0 && endTimeMs >= 3) {
-//      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, 3 * 1000);
-//    } else if (startTimeMs >= 0) {
-//      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
-//    }
-    // throw new IllegalStateException("wrong start time");
+    initializePlayerCore(Uri.parse(source));
   }
 
   private void reLayout(View view) {
@@ -307,7 +266,7 @@ import javax.annotation.Nullable;
     view.layout(view.getLeft(), view.getTop(), view.getMeasuredWidth(), view.getMeasuredHeight());
   }
 
-  private void initializePlayerCore() {
+  private void initializePlayerCore(Uri uri) {
     Log.d(TAG, "initializePlayerCore");
     ExoTrackSelection.Factory videoTrackSelectionFactory = new AdaptiveTrackSelection.Factory();
     trackSelector = new DefaultTrackSelector(context, videoTrackSelectionFactory);
@@ -346,12 +305,11 @@ import javax.annotation.Nullable;
     setPlayer(player);
     bandwidthMeter.addEventListener(new Handler(), this);
     player.setPlayWhenReady(true);
-    // player.setRepeatMode(Player.REPEAT_MODE_ONE);
     playerNeedsSource = true;
-
+    player.setRepeatMode(Player.REPEAT_MODE_ALL);
     config.setDisableDisconnectError(this.disableDisconnectError);
 
-    MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(Uri.parse("http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"));
+    MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(uri);
 
     MediaItem mediaItem = mediaItemBuilder.build();
     MediaSource mediaSource = new ProgressiveMediaSource
@@ -359,15 +317,14 @@ import javax.annotation.Nullable;
       .setLoadErrorHandlingPolicy(config.buildLoadErrorHandlingPolicy(minLoadRetryCount))
       .createMediaSource(mediaItem);
 
-    ClippingMediaSource clippingMediaSource = new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
+    ClippingMediaSource clippingMediaSource = new ClippingMediaSource(mediaSource, 0, 3 * 1000);
     player.setMediaSource(mediaSource);
     player.prepare();
 
     reLayout(this);
     loadVideoStarted = true;
-//    PlaybackParameters params = new PlaybackParameters(rate, 1f);
-//    player.setPlaybackParameters(params);
-    // changeAudioOutput(audioOutput);
+    PlaybackParameters params = new PlaybackParameters(rate, 1f);
+    player.setPlaybackParameters(params);
   }
 
   @Override
@@ -465,11 +422,6 @@ import javax.annotation.Nullable;
         }
       }
     }
-  }
-
-  private void reloadSource() {
-    playerNeedsSource = true;
-    initializePlayerCore();
   }
 
   public void setSelectedTrack(int trackType, String type, Dynamic value) {
