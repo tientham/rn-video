@@ -7,6 +7,7 @@ import com.facebook.react.uimanager.ViewManager;
 
 import com.rnvideo.video.RnVideoConfig;
 import com.rnvideo.video.RnVideoConfigImpl;
+import com.rnvideo.video.ThreeSecVideoViewManager;
 import com.rnvideo.video.VideoViewManager;
 
 import java.util.Arrays;
@@ -34,6 +35,10 @@ public class RnVideoPackage implements ReactPackage {
     if (config == null) {
       config = new RnVideoConfigImpl(reactContext);
     }
-    return Arrays.<ViewManager>asList(new VideoViewManager(config));
+
+    return Arrays.<ViewManager>asList(
+      new VideoViewManager(config),
+      new ThreeSecVideoViewManager(config)
+    );
   }
 }

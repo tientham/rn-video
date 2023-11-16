@@ -10,7 +10,8 @@ import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 
-@UnstableApi public final class ReactExoplayerLoadErrorHandlingPolicy extends DefaultLoadErrorHandlingPolicy {
+@UnstableApi
+public final class ReactExoplayerLoadErrorHandlingPolicy extends DefaultLoadErrorHandlingPolicy {
   private final String TAG = "RELEHP";
   private final int minLoadRetryCount;
 

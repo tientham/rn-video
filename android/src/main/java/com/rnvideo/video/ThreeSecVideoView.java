@@ -4,19 +4,11 @@
 
 package com.rnvideo.video;
 
-import static androidx.media3.common.C.CONTENT_TYPE_DASH;
-import static androidx.media3.common.C.CONTENT_TYPE_HLS;
-import static androidx.media3.common.C.CONTENT_TYPE_OTHER;
-import static androidx.media3.common.C.CONTENT_TYPE_SS;
-import static androidx.media3.common.C.TIME_END_OF_SOURCE;
-
 import com.facebook.react.bridge.Dynamic;
 import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.uimanager.ThemedReactContext;
-import com.rnvideo.R;
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.net.Uri;
 import android.os.Handler;
 import android.text.TextUtils;
@@ -33,36 +25,20 @@ import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.TrackGroup;
 import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.util.UnstableApi;
-import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DataSource;
-import androidx.media3.exoplayer.dash.DashMediaSource;
 import androidx.media3.exoplayer.dash.DashUtil;
-import androidx.media3.exoplayer.dash.DefaultDashChunkSource;
 import androidx.media3.exoplayer.dash.manifest.AdaptationSet;
 import androidx.media3.exoplayer.dash.manifest.DashManifest;
 import androidx.media3.exoplayer.dash.manifest.Period;
 import androidx.media3.exoplayer.dash.manifest.Representation;
-import androidx.media3.exoplayer.drm.DrmSessionEventListener;
-import androidx.media3.exoplayer.drm.MediaDrmCallback;
-import androidx.media3.exoplayer.hls.HlsMediaSource;
 import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
-import androidx.media3.exoplayer.smoothstreaming.DefaultSsChunkSource;
-import androidx.media3.exoplayer.smoothstreaming.SsMediaSource;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
-import androidx.media3.exoplayer.drm.DefaultDrmSessionManager;
-import androidx.media3.exoplayer.drm.DefaultDrmSessionManagerProvider;
-import androidx.media3.exoplayer.drm.DrmSessionManager;
-import androidx.media3.exoplayer.drm.DrmSessionManagerProvider;
-import androidx.media3.exoplayer.drm.ExoMediaDrm;
-import androidx.media3.exoplayer.drm.FrameworkMediaDrm;
-import androidx.media3.exoplayer.drm.HttpMediaDrmCallback;
-import androidx.media3.exoplayer.drm.UnsupportedDrmException;
 import androidx.media3.exoplayer.source.ClippingMediaSource;
 import androidx.media3.exoplayer.source.ProgressiveMediaSource;
 import androidx.media3.exoplayer.source.TrackGroupArray;
@@ -73,7 +49,6 @@ import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
 import androidx.media3.exoplayer.upstream.BandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
-import androidx.media3.extractor.mp4.Track;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 import androidx.media3.common.Player;
@@ -82,9 +57,7 @@ import androidx.media3.common.Player;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.UUID;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -93,9 +66,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 @SuppressLint("ViewConstructor")
-@UnstableApi public class VideoView extends PlayerView implements
+@UnstableApi public class ThreeSecVideoView extends PlayerView implements
   BandwidthMeter.EventListener,
-  DrmSessionEventListener,
   LifecycleEventListener,
   Player.Listener {
 
@@ -108,7 +80,7 @@ import java.util.concurrent.TimeUnit;
 
   private final ThemedReactContext themedReactContext;
   private String source;
-  private final String TAG = "RnVideo";
+  private final String TAG = "RnVideo-3s";
 
   public static final double DEFAULT_MAX_HEAP_ALLOCATION_PERCENT = 1;
   public static final double DEFAULT_MIN_BACK_BUFFER_MEMORY_RESERVE = 0;
@@ -141,12 +113,8 @@ import java.util.concurrent.TimeUnit;
   private int minLoadRetryCount = 3;
   private float rate = 1f;
 
-  private long startTimeMs = -1;
-  private long endTimeMs = -1;
-  private boolean hasDrmFailed = false;
-  private UUID drmUUID = null;
-  private String drmLicenseUrl = null;
-  private String[] drmLicenseHeader = null;
+  private long startTimeMs = 0;
+  private long endTimeMs = 3;
   private boolean disableDisconnectError;
   private boolean isBuffering;
   private boolean preventsDisplaySleepDuringVideoPlayback = true;
@@ -158,18 +126,16 @@ import java.util.concurrent.TimeUnit;
   private boolean loadVideoStarted;
 
 
-  public VideoView(ThemedReactContext ctx, RnVideoConfig config) {
+  public ThreeSecVideoView(ThemedReactContext ctx, RnVideoConfig config) {
     super(ctx);
-    Log.d(TAG, "INIT VIDEO VIEW");
+    Log.d(TAG, "INIT THREE SEC VIDEO VIEW");
     themedReactContext = ctx;
     this.config = config;
     this.bandwidthMeter = config.getBandwidthMeter();
     setUseController(false);
     setControllerAutoShow(false);
     setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
-
-    this.mediaDataSourceFactory = buildDataSourceFactory(true);
-
+    this.mediaDataSourceFactory = buildDataSourceFactory();
     themedReactContext.addLifecycleEventListener(this);
   }
 
@@ -188,7 +154,6 @@ import java.util.concurrent.TimeUnit;
 
   private void initPlayer() {
     Log.d(TAG, "initPlayer");
-    Activity activity = themedReactContext.getCurrentActivity();
     new Handler().postDelayed(new Runnable() {
       @Override
       public void run() {
@@ -196,54 +161,19 @@ import java.util.concurrent.TimeUnit;
           Log.d(TAG, "initPlayer Handler run");
           if (player == null) {
             // Initialize core configuration and listeners
-            initializePlayerCore(VideoView.this);
+            initializePlayerCore();
           }
           Log.d(TAG, "initPlayer srcUri" + srcUri);
           if (playerNeedsSource && srcUri != null) {
             invalidate();
-            // DRM session manager creation must be done on a different thread to prevent crashes so we start a new thread
-            ExecutorService es = Executors.newSingleThreadExecutor();
-            es.execute(new Runnable() {
-              @Override
-              public void run() {
-                Log.d(TAG, "initPlayer Executors run");
-                // DRM initialization must run on a different thread
-                DrmSessionManager drmSessionManager = initializePlayerDrm(VideoView.this);
-                if (drmSessionManager == null && VideoView.this.drmUUID != null) {
-                  // Failed to intialize DRM session manager - cannot continue
-                  Log.e(TAG, "Failed to initialize DRM Session Manager Framework!");
-                  return;
-                }
-
-                if (activity == null) {
-                  Log.e(TAG, "Failed to initialize Player!");
-                  return;
-                }
-
-                // Initialize handler to run on the main thread
-                activity.runOnUiThread(new Runnable() {
-                  public void run() {
-                    try {
-                      Log.d(TAG, "initPlayer runOnUiThread run");
-                      // Source initialization must run on the main thread
-                      initializePlayerSource(VideoView.this, drmSessionManager);
-                    } catch (Exception ex) {
-                      VideoView.this.playerNeedsSource = true;
-                      Log.e(TAG, "Failed to initialize Player!");
-                      Log.e(TAG, ex.toString());
-                    }
-                  }
-                });
-              }
-            });
           } else if (srcUri != null) {
             Log.d(TAG, "initPlayer runOnUiThread run with playerNeedsSource is false");
-            initializePlayerSource(VideoView.this, null);
+            initializePlayerSource();
           }
         } catch (Exception ex) {
-          VideoView.this.playerNeedsSource = true;
+          playerNeedsSource = true;
           ex.printStackTrace();
-          Log.d(TAG, "initPlayer " + ex.toString());
+          Log.d(TAG, "initPlayer " + ex);
         }
       }
     }, 1);
@@ -277,29 +207,20 @@ import java.util.concurrent.TimeUnit;
       case PlaybackException.ERROR_CODE_DRM_PROVISIONING_FAILED:
       case PlaybackException.ERROR_CODE_DRM_SYSTEM_ERROR:
       case PlaybackException.ERROR_CODE_DRM_UNSPECIFIED:
-        if (!hasDrmFailed) {
-          // When DRM fails to reach the app level certificate server it will fail with a source error so we assume that it is DRM related and try one more time
-          hasDrmFailed = true;
-          playerNeedsSource = true;
-          // updateResumePosition();
-          initPlayer();
-          setPlayWhenReady(true);
-          return;
-        }
-        break;
       default:
         break;
     }
+    setPlayWhenReady(true);
     playerNeedsSource = true;
     initPlayer();
   }
 
-  private void initializePlayerCore(VideoView self) {
+  private void initializePlayerCore() {
     Log.d(TAG, "initializePlayerCore");
     ExoTrackSelection.Factory videoTrackSelectionFactory = new AdaptiveTrackSelection.Factory();
-    self.trackSelector = new DefaultTrackSelector(this.themedReactContext, videoTrackSelectionFactory);
-    // TODO: set max bit rate here flexiblely
-    self.trackSelector.setParameters(trackSelector.buildUponParameters().setMaxVideoBitrate(Integer.MAX_VALUE));
+    trackSelector = new DefaultTrackSelector(this.themedReactContext, videoTrackSelectionFactory);
+    // TODO: set max bit rate here flexible
+    trackSelector.setParameters(trackSelector.buildUponParameters().setMaxVideoBitrate(Integer.MAX_VALUE));
 
     DefaultAllocator allocator = new DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE);
     RNLoadControl loadControl = new RNLoadControl(
@@ -318,12 +239,12 @@ import java.util.concurrent.TimeUnit;
 
     DefaultRenderersFactory renderersFactory =
       new DefaultRenderersFactory(this.themedReactContext)
-      .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF);
+        .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF);
 
     MediaSource.Factory mediaSourceFactory = new DefaultMediaSourceFactory(mediaDataSourceFactory);
 
     this.player = new ExoPlayer.Builder(this.themedReactContext, renderersFactory)
-      .setTrackSelector(self.trackSelector)
+      .setTrackSelector(trackSelector)
       .setBandwidthMeter(bandwidthMeter)
       .setLoadControl(loadControl)
       .setMediaSourceFactory(mediaSourceFactory)
@@ -338,28 +259,9 @@ import java.util.concurrent.TimeUnit;
     player.setPlaybackParameters(params);
   }
 
-  private DrmSessionManager initializePlayerDrm(VideoView self) {
-    Log.d(TAG, "initializePlayerDrm");
-    DrmSessionManager drmSessionManager = null;
-    if (self.drmUUID != null) {
-      try {
-        Log.d(TAG, "initializePlayerSource with drmSessionManager - 1");
-        drmSessionManager = self.buildDrmSessionManager(self.drmUUID, self.drmLicenseUrl,
-          self.drmLicenseHeader);
-      } catch (UnsupportedDrmException e) {
-        int errorStringId = e.reason == UnsupportedDrmException.REASON_UNSUPPORTED_SCHEME
-          ? R.string.error_drm_unsupported_scheme : R.string.error_drm_unknown;
-        Log.d(TAG, "initializePlayerSource with UnsupportedDrmException");
-        return null;
-      }
-    }
-    Log.d(TAG, "initializePlayerSource with drmSessionManager - 2");
-    return drmSessionManager;
-  }
-
-  private void initializePlayerSource(VideoView self, DrmSessionManager drmSessionManager) {
-    Log.d(TAG, "initializePlayerSource with drmSessionManager");
-    MediaSource mediaSource = buildMediaSource(self.srcUri, self.extension, drmSessionManager, startTimeMs, endTimeMs);
+  private void initializePlayerSource() {
+    Log.d(TAG, "initializePlayerSource");
+    MediaSource mediaSource = buildMediaSource(srcUri, startTimeMs, endTimeMs);
 
     // wait for player to be set
     while (player == null) {
@@ -390,150 +292,42 @@ import java.util.concurrent.TimeUnit;
 
     Log.d(TAG, "reLayout with view # null");
     view.measure(MeasureSpec.makeMeasureSpec(getMeasuredWidth(), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(getMeasuredHeight(), MeasureSpec.EXACTLY));
+      MeasureSpec.makeMeasureSpec(getMeasuredHeight(), MeasureSpec.EXACTLY));
     view.layout(view.getLeft(), view.getTop(), view.getMeasuredWidth(), view.getMeasuredHeight());
   }
 
-  private DrmSessionManager buildDrmSessionManager(UUID uuid, String licenseUrl, String[] keyRequestPropertiesArray) throws UnsupportedDrmException {
-    Log.d(TAG, "buildDrmSessionManager - 1");
-    return buildDrmSessionManager(uuid, licenseUrl, keyRequestPropertiesArray, 0);
-  }
-
-  private DrmSessionManager buildDrmSessionManager(UUID uuid, String licenseUrl, String[] keyRequestPropertiesArray, int retryCount) throws UnsupportedDrmException {
-    try {
-      Log.d(TAG, "buildDrmSessionManager - 2");
-      HttpMediaDrmCallback drmCallback = new HttpMediaDrmCallback(licenseUrl,
-              buildHttpDataSourceFactory(false));
-      if (keyRequestPropertiesArray != null) {
-        for (int i = 0; i < keyRequestPropertiesArray.length - 1; i += 2) {
-          drmCallback.setKeyRequestProperty(keyRequestPropertiesArray[i], keyRequestPropertiesArray[i + 1]);
-        }
-      }
-      FrameworkMediaDrm mediaDrm = FrameworkMediaDrm.newInstance(uuid);
-      if (hasDrmFailed) {
-        Log.d(TAG, "buildDrmSessionManager - hasDrmFailed = true");
-        // When DRM fails using L1 we want to switch to L3
-        mediaDrm.setPropertyString("securityLevel", "L3");
-      }
-
-      ExoMediaDrm.Provider provider = new ExoMediaDrm.Provider() {
-          @Override
-          public ExoMediaDrm acquireExoMediaDrm(UUID uuid) {
-            Log.d(TAG, "buildDrmSessionManager - acquireExoMediaDrm");
-            return mediaDrm;
-          }
-      };
-      return new DefaultDrmSessionManager.Builder()
-        .setUuidAndExoMediaDrmProvider(uuid, provider)
-        .setMultiSession(false)
-        .setKeyRequestParameters(null)
-        .setUseDrmSessionsForClearContent(3)
-        .build(drmCallback);
-    } catch(UnsupportedDrmException ex) {
-      Log.e(TAG, "buildDrmSessionManager - UnsupportedDrmException");
-      // Unsupported DRM exceptions are handled by the calling method
-      throw ex;
-    } catch (Exception ex) {
-      Log.e(TAG, "buildDrmSessionManager - Exception");
-      ex.printStackTrace();
-      if (retryCount < 3) {
-        // Attempt retry 3 times in case where the OS Media DRM Framework fails for whatever reason
-        return buildDrmSessionManager(uuid, licenseUrl, keyRequestPropertiesArray, ++retryCount);
-      }
-      return null;
-    }
-  }
-
-  private MediaSource buildMediaSource(Uri uri, String overrideExtension, DrmSessionManager drmSessionManager, long startTimeMs, long endTimeMs) {
+  private MediaSource buildMediaSource(Uri uri, long startTimeMs, long endTimeMs) {
     Log.d(TAG, "buildMediaSource - uri: " + uri);
     if (uri == null) {
       throw new IllegalStateException("Invalid video uri");
     }
-    int type = Util.inferContentType(!TextUtils.isEmpty(overrideExtension) ? "." + overrideExtension
-      : uri.getLastPathSegment());
     config.setDisableDisconnectError(this.disableDisconnectError);
 
     MediaItem.Builder mediaItemBuilder = new MediaItem.Builder().setUri(uri);
 
     MediaItem mediaItem = mediaItemBuilder.build();
-    MediaSource mediaSource;
-    DrmSessionManagerProvider drmProvider;
-    if (drmSessionManager != null) {
-      Log.d(TAG, "buildMediaSource - drmSessionManager # null");
-      drmProvider = new DrmSessionManagerProvider() {
-        @Override
-        public DrmSessionManager get(MediaItem mediaItem) {
-            return drmSessionManager;
-        }
-      };
-    } else {
-      Log.d(TAG, "buildMediaSource - DefaultDrmSessionManagerProvider");
-      drmProvider = new DefaultDrmSessionManagerProvider();
-    }
-    Log.d(TAG, "buildMediaSource - type: " + type);
-    switch (type) {
-      case CONTENT_TYPE_SS:
-        mediaSource = new SsMediaSource.Factory(
-          new DefaultSsChunkSource.Factory(mediaDataSourceFactory),
-          buildDataSourceFactory(false)
-        ).setDrmSessionManagerProvider(drmProvider)
-          .setLoadErrorHandlingPolicy(
-            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
-          ).createMediaSource(mediaItem);
-        break;
-      case CONTENT_TYPE_DASH:
-        mediaSource = new DashMediaSource.Factory(
-          new DefaultDashChunkSource.Factory(mediaDataSourceFactory),
-          buildDataSourceFactory(false)
-        ).setDrmSessionManagerProvider(drmProvider)
-          .setLoadErrorHandlingPolicy(
-            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
-          ).createMediaSource(mediaItem);
-        break;
-      case CONTENT_TYPE_HLS:
-        mediaSource = new HlsMediaSource.Factory(
-          mediaDataSourceFactory
-        ).setDrmSessionManagerProvider(drmProvider)
-          .setLoadErrorHandlingPolicy(
-            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
-          ).createMediaSource(mediaItem);
-        break;
-      case CONTENT_TYPE_OTHER:
-        mediaSource = new ProgressiveMediaSource.Factory(
-          mediaDataSourceFactory
-        ).setDrmSessionManagerProvider(drmProvider)
-          .setLoadErrorHandlingPolicy(
-            config.buildLoadErrorHandlingPolicy(minLoadRetryCount)
-          ).createMediaSource(mediaItem);
-        break;
-      default: {
-        throw new IllegalStateException("Unsupported type: " + type);
-      }
-    }
+    MediaSource mediaSource = new ProgressiveMediaSource
+      .Factory(mediaDataSourceFactory)
+      .setLoadErrorHandlingPolicy(config.buildLoadErrorHandlingPolicy(minLoadRetryCount))
+      .createMediaSource(mediaItem);
 
-    if (startTimeMs >= 0 && endTimeMs >= 0) {
-      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
+    if (startTimeMs >= 0 && endTimeMs >= 3) {
+      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, 3 * 1000);
     } else if (startTimeMs >= 0) {
-      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, TIME_END_OF_SOURCE);
-    } else if (endTimeMs >= 0) {
-      return new ClippingMediaSource(mediaSource, 0, endTimeMs * 1000);
+      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
     }
-
-    return mediaSource;
+    throw new IllegalStateException("wrong start time");
   }
 
-  private DataSource.Factory buildDataSourceFactory(boolean useBandwidthMeter) {
-    Log.d(TAG, "buildDataSourceFactory useBandwidthMeter: " + useBandwidthMeter);
-    return DataSourceUtil.getDefaultDataSourceFactory(this.themedReactContext,
-      useBandwidthMeter ? bandwidthMeter : null, requestHeaders);
+  private DataSource.Factory buildDataSourceFactory() {
+    Log.d(TAG, "buildDataSourceFactory useBandwidthMeter");
+    return DataSourceUtil.getDefaultDataSourceFactory(this.themedReactContext, bandwidthMeter, requestHeaders);
   }
 
   private HttpDataSource.Factory buildHttpDataSourceFactory(boolean useBandwidthMeter) {
     Log.d(TAG, "buildHttpDataSourceFactory useBandwidthMeter: " + useBandwidthMeter);
     return DataSourceUtil.getDefaultHttpDataSourceFactory(
-      this.themedReactContext,
-      useBandwidthMeter ? bandwidthMeter : null,
-      requestHeaders);
+      this.themedReactContext, bandwidthMeter, requestHeaders);
   }
 
   public void setBackBufferDurationMs(int backBufferDurationMs) {
@@ -554,7 +348,7 @@ import java.util.concurrent.TimeUnit;
   private void setPlayWhenReady(boolean playWhenReady) {
     Log.d(TAG, "setPlayWhenReady playWhenReady: " + playWhenReady + " player is: " + player);
     if (player == null) {
-        return;
+      return;
     }
 
     player.setPlayWhenReady(playWhenReady);

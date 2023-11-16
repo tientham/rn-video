@@ -3,5 +3,6 @@
  */
 
 import DroidRnVideo from './AndroidVideoViewNativeComponent';
+import DroidThreeSecRnVideo from './AndroidThreeSecVideoViewNativeComponent';
 
-export { DroidRnVideo };
+export { DroidRnVideo, DroidThreeSecRnVideo };
