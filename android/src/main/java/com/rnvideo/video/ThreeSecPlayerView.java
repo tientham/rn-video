@@ -57,7 +57,7 @@ import javax.annotation.Nullable;
 
   private View surfaceView;
   private String source;
-  private final String TAG = "RnVideo-3s";
+  private final String TAG = "RnVideo-3sp";
 
   public static final double DEFAULT_MAX_HEAP_ALLOCATION_PERCENT = 1;
   public static final double DEFAULT_MIN_BACK_BUFFER_MEMORY_RESERVE = 0;
