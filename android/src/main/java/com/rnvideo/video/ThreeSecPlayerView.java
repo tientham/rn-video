@@ -52,6 +52,7 @@ import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import javax.annotation.Nullable;
@@ -111,6 +112,8 @@ import javax.annotation.Nullable;
   private boolean selectTrackWhenReady = false;
   private String videoTrackType;
   private Dynamic videoTrackValue;
+  private String audioTrackType;
+  private Dynamic audioTrackValue;
   private long contentStartTime = -1L;
   private boolean loadVideoStarted;
 
@@ -118,6 +121,7 @@ import javax.annotation.Nullable;
   private final FrameLayout adOverlayFrameLayout;
   private final AspectRatioFrameLayout layout;
   private int maxBitRate = 0;
+  private float audioVolume = 1f;
 
   public ThreeSecPlayerView(Context context) {
     this(context, null);
@@ -282,12 +286,14 @@ import javax.annotation.Nullable;
       .setLoadErrorHandlingPolicy(config.buildLoadErrorHandlingPolicy(minLoadRetryCount))
       .createMediaSource(mediaItem);
 
-    if (startTimeMs >= 0 && endTimeMs >= 3) {
-      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, 3 * 1000);
-    } else if (startTimeMs >= 0) {
-      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
-    }
-    throw new IllegalStateException("wrong start time");
+    // return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
+    return mediaSource;
+//    if (startTimeMs >= 0 && endTimeMs >= 3) {
+//      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, 3 * 1000);
+//    } else if (startTimeMs >= 0) {
+//      return new ClippingMediaSource(mediaSource, startTimeMs * 1000, endTimeMs * 1000);
+//    }
+    // throw new IllegalStateException("wrong start time");
   }
 
   private void reLayout(View view) {
@@ -328,7 +334,7 @@ import javax.annotation.Nullable;
 
     MediaSource.Factory mediaSourceFactory = new DefaultMediaSourceFactory(mediaDataSourceFactory);
 
-    player = new ExoPlayer.Builder(context, renderersFactory)
+    player = new ExoPlayer.Builder(context)
       .setTrackSelector(trackSelector)
       .setBandwidthMeter(bandwidthMeter)
       .setLoadControl(loadControl)
@@ -339,10 +345,12 @@ import javax.annotation.Nullable;
     setPlayer(player);
     bandwidthMeter.addEventListener(new Handler(), this);
     player.setPlayWhenReady(true);
+    // player.setRepeatMode(Player.REPEAT_MODE_ONE);
     playerNeedsSource = true;
 
-    PlaybackParameters params = new PlaybackParameters(rate, 1f);
-    player.setPlaybackParameters(params);
+//    PlaybackParameters params = new PlaybackParameters(rate, 1f);
+//    player.setPlaybackParameters(params);
+    // changeAudioOutput(audioOutput);
   }
 
   @Override
@@ -367,11 +375,11 @@ import javax.annotation.Nullable;
   private final class InnerPlayerListener implements Player.Listener {
     @Override
     public void onEvents(@NonNull Player player, Player.Events events) {
-      Log.d(TAG, "onEvents");
+      Log.d(TAG, "InnerPlayerListener onEvents: " + player.getPlaybackState());
       if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) || events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
         int playbackState = player.getPlaybackState();
         boolean playWhenReady = player.getPlayWhenReady();
-        String text = TAG + " onStateChanged: playWhenReady=" + playWhenReady + ", playbackState=";
+        String text = TAG + "InnerPlayerListener onStateChanged: playWhenReady=" + playWhenReady + ", playbackState=";
         switch (playbackState) {
           case Player.STATE_IDLE:
             text += "idle";
@@ -385,15 +393,18 @@ import javax.annotation.Nullable;
             break;
           case Player.STATE_READY:
             text += "ready";
-            if (selectTrackWhenReady && isUsingContentResolution) {
-              selectTrackWhenReady = false;
-              setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
+//            if (selectTrackWhenReady && isUsingContentResolution) {
+//              selectTrackWhenReady = false;
+//              setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
+//            }
+            if (audioTrackType != null) {
+              setSelectedAudioTrack(audioTrackType, audioTrackValue);
             }
             setKeepScreenOn(preventsDisplaySleepDuringVideoPlayback);
             break;
           case Player.STATE_ENDED:
             text += "ended";
-            releasePlayer();
+            // releasePlayer();
             setKeepScreenOn(false);
             break;
           default:
@@ -500,6 +511,8 @@ import javax.annotation.Nullable;
           tracks.set(0, closestTrackIndex);
         }
       }
+    } else if (rendererIndex == C.TRACK_TYPE_AUDIO) { // Audio default
+      groupIndex = getGroupIndexForDefaultLocale(groups);
     }
 
     if (groupIndex == C.INDEX_UNSET && trackType == C.TRACK_TYPE_VIDEO && groups.length != 0) { // Video auto
@@ -592,5 +605,30 @@ import javax.annotation.Nullable;
       }
     }
     return C.INDEX_UNSET;
+  }
+
+  public void setSelectedAudioTrack(String type, Dynamic value) {
+    audioTrackType = type;
+    audioTrackValue = value;
+    setSelectedTrack(C.TRACK_TYPE_AUDIO, audioTrackType, audioTrackValue);
+  }
+
+  private int getGroupIndexForDefaultLocale(TrackGroupArray groups) {
+    if (groups.length == 0){
+      return C.INDEX_UNSET;
+    }
+
+    int groupIndex = 0; // default if no match
+    String locale2 = Locale.getDefault().getLanguage(); // 2 letter code
+    String locale3 = Locale.getDefault().getISO3Language(); // 3 letter code
+    for (int i = 0; i < groups.length; ++i) {
+      Format format = groups.get(i).getFormat(0);
+      String language = format.language;
+      if (language != null && (language.equals(locale2) || language.equals(locale3))) {
+        groupIndex = i;
+        break;
+      }
+    }
+    return groupIndex;
   }
 }
