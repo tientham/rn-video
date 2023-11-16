@@ -28,10 +28,6 @@ export default class GifRnVideo extends BaseComponent<GifRnVideoProps> {
 
   static defaultProps = {
     source: isAndroid() ? '' : '',
-    playerHeight: 500,
-    playerWidth: 350,
-    volume: 0,
-    isReplay: true,
   };
 
   constructor(props: GifRnVideoProps) {

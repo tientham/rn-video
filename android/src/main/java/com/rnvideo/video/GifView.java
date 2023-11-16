@@ -77,7 +77,7 @@ import javax.annotation.Nullable;
   }
 
   public void setSource(@Nullable String source) {
-    Log.d(TAG, "setSource");
+    Log.d(TAG, "setSource: " + source);
     Glide.with(context)
       .asGif()
       .load(source)
