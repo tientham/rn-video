@@ -6,7 +6,7 @@ import * as React from 'react';
 import type { NativeMethods } from 'react-native';
 import { StyleSheet } from 'react-native';
 import BaseComponent from '../base/BaseComponent';
-import androidGrfVidPr from '../fabric/AndroidThreeSecVideoViewNativeComponent';
+import androidGrfVidPr from '../fabric/AndroidThreeSecPlayerViewNativeComponent';
 import { isAndroid } from '../utils/helper';
 
 const styles = StyleSheet.create({
