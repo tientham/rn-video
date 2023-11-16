@@ -16,6 +16,7 @@ import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
 import androidx.media3.common.C;
@@ -40,7 +41,6 @@ import androidx.media3.ui.AspectRatioFrameLayout;
 
 import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.uimanager.ThemedReactContext;
-
 import javax.annotation.Nullable;
 
 @SuppressLint("ViewConstructor")
@@ -49,6 +49,7 @@ import javax.annotation.Nullable;
   LifecycleEventListener {
 
   private View surfaceView;
+  private ImageView thumbnail;
   private final String TAG = "RnVideo-3sp";
   @SuppressLint("UnsafeOptInUsageError")
   private int minBufferMs = DefaultLoadControl.DEFAULT_MIN_BUFFER_MS;
@@ -110,9 +111,6 @@ import javax.annotation.Nullable;
     updateSurfaceView();
 
     adOverlayFrameLayout = new FrameLayout(context);
-
-//    layout.addView(shutterView, 1, layoutParams);
-//    layout.addView(subtitleLayout, 2, layoutParams);
     layout.addView(adOverlayFrameLayout, 1, layoutParams);
 
     addViewInLayout(layout, 0, aspectRatioParams);
