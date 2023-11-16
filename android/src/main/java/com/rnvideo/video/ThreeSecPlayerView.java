@@ -8,6 +8,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
+import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
@@ -16,23 +17,30 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
+import androidx.annotation.NonNull;
 import androidx.media3.common.C;
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
+import androidx.media3.common.TrackGroup;
+import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DataSource;
-import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.mediacodec.MediaCodecInfo;
+import androidx.media3.exoplayer.mediacodec.MediaCodecUtil;
 import androidx.media3.exoplayer.source.ClippingMediaSource;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.source.ProgressiveMediaSource;
+import androidx.media3.exoplayer.source.TrackGroupArray;
 import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection;
+import androidx.media3.exoplayer.trackselection.MappingTrackSelector;
 import androidx.media3.exoplayer.upstream.BandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
@@ -42,6 +50,8 @@ import com.facebook.react.uimanager.ThemedReactContext;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import javax.annotation.Nullable;
@@ -157,24 +167,27 @@ import javax.annotation.Nullable;
     config = new RnVideoConfigImpl(context);
     bandwidthMeter = config.getBandwidthMeter();
 
-    mediaDataSourceFactory = buildDataSourceFactory(true);
+    mediaDataSourceFactory = buildDataSourceFactory();
 
     initializePlayerCore();
   }
 
   private void clearVideoView() {
+    Log.d(TAG, "clearVideoView");
     if (surfaceView instanceof SurfaceView) {
       this.player.clearVideoSurfaceView((SurfaceView) surfaceView);
     }
   }
 
   private void setVideoView() {
+    Log.d(TAG, "setVideoView");
     if (surfaceView instanceof SurfaceView) {
       player.setVideoSurfaceView((SurfaceView) surfaceView);
     }
   }
 
   private void updateSurfaceView() {
+    Log.d(TAG, "updateSurfaceView");
     View view = new SurfaceView(context);
     view.setLayoutParams(layoutParams);
 
@@ -196,6 +209,7 @@ import javax.annotation.Nullable;
   }
 
   public void setPlayer(ExoPlayer player) {
+    Log.d(TAG, "setPlayer player: " + player);
     if (this.player == player) {
       return;
     }
@@ -211,6 +225,7 @@ import javax.annotation.Nullable;
   }
 
   public void setResizeMode(int resizeMode) {
+    Log.d(TAG, "setResizeMode mode: " + resizeMode);
     if (layout.getResizeMode() != resizeMode) {
       layout.setResizeMode(resizeMode);
       post(measureAndLayout);
@@ -335,22 +350,247 @@ import javax.annotation.Nullable;
     Log.d(TAG, "onBandwidthSample");
   }
 
-  private DataSource.Factory buildDataSourceFactory(boolean useBandwidthMeter) {
-    Log.d(TAG, "buildDataSourceFactory useBandwidthMeter: " + useBandwidthMeter);
-    return DataSourceUtil.getDefaultDataSourceFactory((ThemedReactContext) context,
-      useBandwidthMeter ? bandwidthMeter : null, requestHeaders);
+  private DataSource.Factory buildDataSourceFactory() {
+    Log.d(TAG, "buildDataSourceFactory");
+    return DataSourceUtil.getDefaultDataSourceFactory((ThemedReactContext) context, bandwidthMeter, requestHeaders);
   }
 
-  private HttpDataSource.Factory buildHttpDataSourceFactory(boolean useBandwidthMeter) {
-    Log.d(TAG, "buildHttpDataSourceFactory useBandwidthMeter: " + useBandwidthMeter);
-    return DataSourceUtil.getDefaultHttpDataSourceFactory(
-      (ThemedReactContext) context,
-      useBandwidthMeter ? bandwidthMeter : null,
-      requestHeaders);
+  private void releasePlayer() {
+    Log.d(TAG, "releasePlayer");
+    player.release();
+    player.removeListener(innerPlayerListener);
+    trackSelector = null;
+    player = null;
+    bandwidthMeter.removeEventListener(this);
   }
 
   private final class InnerPlayerListener implements Player.Listener {
+    @Override
+    public void onEvents(@NonNull Player player, Player.Events events) {
+      Log.d(TAG, "onEvents");
+      if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) || events.contains(Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
+        int playbackState = player.getPlaybackState();
+        boolean playWhenReady = player.getPlayWhenReady();
+        String text = TAG + " onStateChanged: playWhenReady=" + playWhenReady + ", playbackState=";
+        switch (playbackState) {
+          case Player.STATE_IDLE:
+            text += "idle";
+            if (!player.getPlayWhenReady()) {
+              setKeepScreenOn(false);
+            }
+            break;
+          case Player.STATE_BUFFERING:
+            text += "buffering";
+            setKeepScreenOn(preventsDisplaySleepDuringVideoPlayback);
+            break;
+          case Player.STATE_READY:
+            text += "ready";
+            if (selectTrackWhenReady && isUsingContentResolution) {
+              selectTrackWhenReady = false;
+              setSelectedTrack(C.TRACK_TYPE_VIDEO, videoTrackType, videoTrackValue);
+            }
+            setKeepScreenOn(preventsDisplaySleepDuringVideoPlayback);
+            break;
+          case Player.STATE_ENDED:
+            text += "ended";
+            releasePlayer();
+            setKeepScreenOn(false);
+            break;
+          default:
+            text += "unknown";
+            break;
+        }
+        Log.d(TAG, text);
+      }
+    }
 
+  }
 
+  public void setSelectedTrack(int trackType, String type, Dynamic value) {
+    Log.d(TAG, "setSelectedTrack");
+    if (player == null) return;
+    int rendererIndex = getTrackRendererIndex(trackType);
+    if (rendererIndex == C.INDEX_UNSET) {
+      return;
+    }
+    MappingTrackSelector.MappedTrackInfo info = trackSelector.getCurrentMappedTrackInfo();
+    if (info == null) {
+      return;
+    }
+
+    TrackGroupArray groups = info.getTrackGroups(rendererIndex);
+    int groupIndex = C.INDEX_UNSET;
+    List<Integer> tracks = new ArrayList<>();
+    tracks.add(0);
+
+    if (TextUtils.isEmpty(type)) {
+      type = "default";
+    }
+
+    if (type.equals("disabled")) {
+      disableTrack(rendererIndex);
+      return;
+    } else if (type.equals("language")) {
+      for (int i = 0; i < groups.length; ++i) {
+        Format format = groups.get(i).getFormat(0);
+        if (format.language != null && format.language.equals(value.asString())) {
+          groupIndex = i;
+          break;
+        }
+      }
+    } else if (type.equals("title")) {
+      for (int i = 0; i < groups.length; ++i) {
+        Format format = groups.get(i).getFormat(0);
+        if (format.id != null && format.id.equals(value.asString())) {
+          groupIndex = i;
+          break;
+        }
+      }
+    } else if (type.equals("index")) {
+      if (value.asInt() < groups.length) {
+        groupIndex = value.asInt();
+      }
+    } else if (type.equals("resolution")) {
+      int height = value.asInt();
+      for (int i = 0; i < groups.length; ++i) { // Search for the exact height
+        TrackGroup group = groups.get(i);
+        Format closestFormat = null;
+        int closestTrackIndex = -1;
+        boolean usingExactMatch = false;
+        for (int j = 0; j < group.length; j++) {
+          Format format = group.getFormat(j);
+          if (format.height == height) {
+            groupIndex = i;
+            tracks.set(0, j);
+            closestFormat = null;
+            closestTrackIndex = -1;
+            usingExactMatch = true;
+            break;
+          } else if (isUsingContentResolution) {
+            // When using content resolution rather than ads, we need to try and find the closest match if there is no exact match
+            if (closestFormat != null) {
+              if ((format.bitrate > closestFormat.bitrate || format.height > closestFormat.height) && format.height < height) {
+                // Higher quality match
+                closestFormat = format;
+                closestTrackIndex = j;
+              }
+            } else if(format.height < height) {
+              closestFormat = format;
+              closestTrackIndex = j;
+            }
+          }
+        }
+        // This is a fallback if the new period contains only higher resolutions than the user has selected
+        if (closestFormat == null && isUsingContentResolution && !usingExactMatch) {
+          // No close match found - so we pick the lowest quality
+          int minHeight = Integer.MAX_VALUE;
+          for (int j = 0; j < group.length; j++) {
+            Format format = group.getFormat(j);
+            if (format.height < minHeight) {
+              minHeight = format.height;
+              groupIndex = i;
+              tracks.set(0, j);
+            }
+          }
+        }
+        // Selecting the closest match found
+        if (closestFormat != null && closestTrackIndex != -1) {
+          // We found the closest match instead of an exact one
+          groupIndex = i;
+          tracks.set(0, closestTrackIndex);
+        }
+      }
+    }
+
+    if (groupIndex == C.INDEX_UNSET && trackType == C.TRACK_TYPE_VIDEO && groups.length != 0) { // Video auto
+      // Add all tracks as valid options for ABR to choose from
+      TrackGroup group = groups.get(0);
+      tracks = new ArrayList<>(group.length);
+      ArrayList<Integer> allTracks = new ArrayList<>(group.length);
+      groupIndex = 0;
+      for (int j = 0; j < group.length; j++) {
+        allTracks.add(j);
+      }
+
+      // Valiate list of all tracks and add only supported formats
+      int supportedFormatLength = 0;
+      ArrayList<Integer> supportedTrackList = new ArrayList<>();
+      for (int g = 0; g < allTracks.size(); g++) {
+        Format format = group.getFormat(g);
+        if (isFormatSupported(format)) {
+          supportedFormatLength++;
+        }
+      }
+      if (allTracks.size() == 1) {
+        // With only one tracks we can't remove any tracks so attempt to play it anyway
+        tracks = allTracks;
+      } else {
+        tracks =  new ArrayList<>(supportedFormatLength + 1);
+        for (int k = 0; k < allTracks.size(); k++) {
+          Format format = group.getFormat(k);
+          if (isFormatSupported(format)) {
+            tracks.add(allTracks.get(k));
+            supportedTrackList.add(allTracks.get(k));
+          }
+        }
+      }
+    }
+
+    if (groupIndex == C.INDEX_UNSET) {
+      disableTrack(rendererIndex);
+      return;
+    }
+
+    TrackSelectionOverride selectionOverride = new TrackSelectionOverride(groups.get(groupIndex), tracks);
+
+    DefaultTrackSelector.Parameters selectionParameters = trackSelector.getParameters()
+      .buildUpon()
+      .setRendererDisabled(rendererIndex, false)
+      .clearOverridesOfType(selectionOverride.getType())
+      .addOverride(selectionOverride)
+      .build();
+    trackSelector.setParameters(selectionParameters);
+  }
+
+  public void disableTrack(int rendererIndex) {
+    Log.d(TAG, "disableTrack");
+    DefaultTrackSelector.Parameters disableParameters = trackSelector.getParameters()
+      .buildUpon()
+      .setRendererDisabled(rendererIndex, true)
+      .build();
+    trackSelector.setParameters(disableParameters);
+  }
+
+  private boolean isFormatSupported(Format format) {
+    Log.d(TAG, "isFormatSupported");
+    int width = format.width == Format.NO_VALUE ? 0 : format.width;
+    int height = format.height == Format.NO_VALUE ? 0 : format.height;
+    float frameRate = format.frameRate == Format.NO_VALUE ? 0 : format.frameRate;
+    String mimeType = format.sampleMimeType;
+    if (mimeType == null) {
+      return true;
+    }
+    boolean isSupported;
+    try {
+      MediaCodecInfo codecInfo = MediaCodecUtil.getDecoderInfo(mimeType, false, false);
+      isSupported = codecInfo.isVideoSizeAndRateSupportedV21(width, height, frameRate);
+    } catch (Exception e) {
+      // Failed to get decoder info - assume it is supported
+      isSupported = true;
+    }
+    return isSupported;
+  }
+
+  public int getTrackRendererIndex(int trackType) {
+    Log.d(TAG, "getTrackRendererIndex");
+    if (player != null) {
+      int rendererCount = player.getRendererCount();
+      for (int rendererIndex = 0; rendererIndex < rendererCount; rendererIndex++) {
+        if (player.getRendererType(rendererIndex) == trackType) {
+          return rendererIndex;
+        }
+      }
+    }
+    return C.INDEX_UNSET;
   }
 }
