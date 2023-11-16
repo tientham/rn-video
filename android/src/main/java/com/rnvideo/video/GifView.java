@@ -40,7 +40,6 @@ import javax.annotation.Nullable;
 
   private ViewGroup.LayoutParams layoutParams;
   private FrameLayout.LayoutParams aspectRatioParams;
-  private final FrameLayout adOverlayFrameLayout;
   private final AspectRatioFrameLayout layout;
 
 
@@ -67,17 +66,18 @@ import javax.annotation.Nullable;
     layout = new AspectRatioFrameLayout(context);
     layout.setLayoutParams(aspectRatioParams);
 
-    adOverlayFrameLayout = new FrameLayout(context);
-
     MultiTransformation<Bitmap> multiTransformation = new MultiTransformation<>(
       new CenterCrop(),
       new BlurTransformation(10, 1));
 
     requestOptions = new RequestOptions().bitmapTransform(multiTransformation).override(250);
+
+    thumbnail = new ImageView(context);
   }
 
   public void setSource(@Nullable String source) {
     Log.d(TAG, "setSource: " + source);
+
     Glide.with(context)
       .asGif()
       .load(source)
@@ -88,9 +88,8 @@ import javax.annotation.Nullable;
       .priority(Priority.IMMEDIATE)
       .into(thumbnail);
 
-    thumbnail = new ImageView(context);
-    thumbnail.setLayoutParams(layoutParams);
-    layout.addView(thumbnail, 1, layoutParams);
+    // thumbnail.setLayoutParams(layoutParams);
+    layout.addView(thumbnail, 0, layoutParams);
     addViewInLayout(layout, 0, aspectRatioParams);
 
     reLayout(this);
