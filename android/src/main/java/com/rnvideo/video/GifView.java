@@ -54,6 +54,7 @@ import javax.annotation.Nullable;
 
   public GifView(Context context, AttributeSet attrs, int defStyleAttr) {
     super(context, attrs, defStyleAttr);
+    Log.d(TAG, "INIT GIF VIEW");
     this.context = context;
     layoutParams = new ViewGroup.LayoutParams(
       ViewGroup.LayoutParams.MATCH_PARENT,

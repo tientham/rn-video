@@ -12,6 +12,12 @@ Some of my applications have been sufferring a lot about the performance issue w
 
 Please note that, according to this annoucement of Exoplayer [Exoplayer Deprecation](https://github.com/google/ExoPlayer#deprecation), `exoplayer:2.19.1` will be the last artifact release for ExoPlayer and it will be replaced by `AndroidX Media3`. Therefore, my library here will survive 😉
 
+## Features
+
+- Video video
+- Gif Video
+- Blur gif video
+
 ## Installation
 
 ```sh
