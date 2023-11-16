@@ -1,6 +1,6 @@
 {
   "name": "@tientham/rn-video",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "description": "React Native Video",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
