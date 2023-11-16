@@ -10,6 +10,7 @@ import android.graphics.Bitmap;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -38,6 +39,7 @@ import javax.annotation.Nullable;
   private Context context;
 
   private ViewGroup.LayoutParams layoutParams;
+  private FrameLayout.LayoutParams aspectRatioParams;
   private final FrameLayout adOverlayFrameLayout;
   private final AspectRatioFrameLayout layout;
 
@@ -57,7 +59,7 @@ import javax.annotation.Nullable;
       ViewGroup.LayoutParams.MATCH_PARENT,
       ViewGroup.LayoutParams.MATCH_PARENT);
 
-    FrameLayout.LayoutParams aspectRatioParams = new FrameLayout.LayoutParams(
+    aspectRatioParams = new FrameLayout.LayoutParams(
       FrameLayout.LayoutParams.MATCH_PARENT,
       FrameLayout.LayoutParams.MATCH_PARENT);
     aspectRatioParams.gravity = Gravity.CENTER;
@@ -71,11 +73,6 @@ import javax.annotation.Nullable;
       new BlurTransformation(10, 1));
 
     requestOptions = new RequestOptions().bitmapTransform(multiTransformation).override(250);
-
-    thumbnail = new ImageView(context);
-    thumbnail.setLayoutParams(layoutParams);
-
-    addViewInLayout(layout, 0, aspectRatioParams);
   }
 
   public void setSource(@Nullable String source) {
@@ -90,7 +87,31 @@ import javax.annotation.Nullable;
       .priority(Priority.IMMEDIATE)
       .into(thumbnail);
 
+    thumbnail = new ImageView(context);
+    thumbnail.setLayoutParams(layoutParams);
     layout.addView(thumbnail, 1, layoutParams);
+    addViewInLayout(layout, 0, aspectRatioParams);
+
+    reLayout(this);
   }
 
+  private void reLayout(View view) {
+    Log.d(TAG, "reLayout");
+    if (view == null) return;
+
+    Log.d(TAG, "reLayout with view # null");
+    view.measure(MeasureSpec.makeMeasureSpec(getMeasuredWidth(), MeasureSpec.EXACTLY),
+      MeasureSpec.makeMeasureSpec(getMeasuredHeight(), MeasureSpec.EXACTLY));
+    view.layout(view.getLeft(), view.getTop(), view.getMeasuredWidth(), view.getMeasuredHeight());
+  }
+
+  private final Runnable measureAndLayout = new Runnable() {
+    @Override
+    public void run() {
+      measure(
+        MeasureSpec.makeMeasureSpec(getWidth(), MeasureSpec.EXACTLY),
+        MeasureSpec.makeMeasureSpec(getHeight(), MeasureSpec.EXACTLY));
+      layout(getLeft(), getTop(), getRight(), getBottom());
+    }
+  };
 }
