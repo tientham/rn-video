@@ -8,11 +8,12 @@ import android.annotation.SuppressLint;
 
 import com.facebook.react.uimanager.SimpleViewManager;
 import com.facebook.react.uimanager.ThemedReactContext;
+import com.facebook.react.uimanager.ViewGroupManager;
 import com.facebook.react.uimanager.annotations.ReactProp;
 
 import javax.annotation.Nullable;
 
-public class ThreeSecPlayerViewManager extends SimpleViewManager<ThreeSecPlayerView> {
+public class ThreeSecPlayerViewManager extends ViewGroupManager<ThreeSecPlayerView> {
   private static final String REACT_PACKAGE = "RnVideo-3sp";
   private final String SET_SOURCE = "source";
   private final String SET_PLAY = "play";

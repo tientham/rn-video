@@ -37,13 +37,16 @@ import androidx.media3.exoplayer.upstream.BandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.ui.AspectRatioFrameLayout;
+
+import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.uimanager.ThemedReactContext;
 
 import javax.annotation.Nullable;
 
 @SuppressLint("ViewConstructor")
 @UnstableApi public class ThreeSecPlayerView extends FrameLayout implements
-  BandwidthMeter.EventListener {
+  BandwidthMeter.EventListener,
+  LifecycleEventListener {
 
   private View surfaceView;
   private final String TAG = "RnVideo-3sp";
@@ -72,12 +75,12 @@ import javax.annotation.Nullable;
   private float rate = 1f;
   private final RnVideoConfig config;
   private boolean preventsDisplaySleepDuringVideoPlayback = true;
-  private boolean loadVideoStarted;
 
   private ViewGroup.LayoutParams layoutParams;
   private final FrameLayout adOverlayFrameLayout;
   private final AspectRatioFrameLayout layout;
   private int maxBitRate = 0;
+
   public ThreeSecPlayerView(Context context) {
     this(context, null);
   }
@@ -152,12 +155,13 @@ import javax.annotation.Nullable;
 
   @Override
   public void requestLayout() {
+    Log.d(TAG, "requestLayout");
     super.requestLayout();
     post(measureAndLayout);
   }
 
   public void setPlayer(ExoPlayer player) {
-    Log.d(TAG, "setPlayer player: " + player);
+    Log.d(TAG, "setPlayer");
     if (this.player != null) {
       this.player.removeListener(innerPlayerListener);
       clearVideoView();
@@ -258,7 +262,6 @@ import javax.annotation.Nullable;
     player.prepare();
 
     reLayout(this);
-    loadVideoStarted = true;
     PlaybackParameters params = new PlaybackParameters(rate, 1f);
     player.setPlaybackParameters(params);
   }
@@ -280,6 +283,24 @@ import javax.annotation.Nullable;
     trackSelector = null;
     player = null;
     bandwidthMeter.removeEventListener(this);
+  }
+
+  @Override
+  public void onHostResume() {
+    Log.d(TAG, "onHostResume");
+    // NOTHING TO DO FOR NOW
+  }
+
+  @Override
+  public void onHostPause() {
+    Log.d(TAG, "onHostPause");
+    // NOTHING TO DO FOR NOW
+  }
+
+  @Override
+  public void onHostDestroy() {
+    Log.d(TAG, "onHostDestroy");
+    releasePlayer();
   }
 
   private final class InnerPlayerListener implements Player.Listener {
