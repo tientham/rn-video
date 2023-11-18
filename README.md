@@ -2,7 +2,7 @@
 
 **RnVideo** is a react native library for a fast and performance video on Android (currently support only Android).
 
-![RnVideo](https://img.shields.io/badge/v0.4.2-pass-green.svg)
+![RnVideo](https://img.shields.io/badge/v0.4.3-pass-green.svg)
 
 ## Motivation
 
@@ -15,8 +15,8 @@ Please note that, according to this annoucement of Exoplayer [Exoplayer Deprecat
 ## Features
 
 - Video video
-- Gif Video
-- Blur gif video
+- Gif
+- Blur gif
 
 ## Installation
 
@@ -36,6 +36,10 @@ import { RnVideo } from "@tientham/rn-video";
   isPlay={true}
   isReplay={true}
 />
+
+<GifRnVideo source="gif_url" />
+
+<BlurGifRnVideo source="gif_url" />
 ```
 
 ## Contributing

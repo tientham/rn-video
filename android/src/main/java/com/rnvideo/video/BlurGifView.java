@@ -38,10 +38,10 @@ import jp.wasabeef.glide.transformations.BlurTransformation;
 import javax.annotation.Nullable;
 
 @SuppressLint("ViewConstructor")
-@UnstableApi public class GifView extends FrameLayout {
+@UnstableApi public class BlurGifView extends FrameLayout {
 
   private ImageView thumbnail;
-  private final String TAG = "RnVideo-3sg";
+  private final String TAG = "RnVideo-3sbg";
 
   RequestOptions requestOptions;
   private Context context;
@@ -51,15 +51,15 @@ import javax.annotation.Nullable;
   private final AspectRatioFrameLayout layout;
 
 
-  public GifView(Context context) {
+  public BlurGifView(Context context) {
     this(context, null);
   }
 
-  public GifView(Context context, AttributeSet attrs) {
+  public BlurGifView(Context context, AttributeSet attrs) {
     this(context, attrs, 0);
   }
 
-  public GifView(Context context, AttributeSet attrs, int defStyleAttr) {
+  public BlurGifView(Context context, AttributeSet attrs, int defStyleAttr) {
     super(context, attrs, defStyleAttr);
     Log.d(TAG, "INIT GIF VIEW");
     this.context = context;
@@ -73,6 +73,13 @@ import javax.annotation.Nullable;
     aspectRatioParams.gravity = Gravity.CENTER;
     layout = new AspectRatioFrameLayout(context);
     layout.setLayoutParams(aspectRatioParams);
+
+    MultiTransformation<Bitmap> multiTransformation = new MultiTransformation<>(
+      new CenterCrop(),
+      new BlurTransformation(10, 1));
+
+    requestOptions = new RequestOptions().bitmapTransform(multiTransformation).override(250).set(GifOptions.DISABLE_ANIMATION, false);
+
     thumbnail = new ImageView(context);
   }
 
@@ -86,6 +93,7 @@ import javax.annotation.Nullable;
           Glide.with(((ThemedReactContext) context).getCurrentActivity())
             .asGif()
             .load(source)
+            .apply(requestOptions)
             .diskCacheStrategy(DiskCacheStrategy.NONE)
             //.thumbnail(0.25f)
             .priority(Priority.IMMEDIATE)
@@ -109,7 +117,7 @@ import javax.annotation.Nullable;
           layout.addView(thumbnail, 0, layoutParams);
           addViewInLayout(layout, 0, aspectRatioParams);
 
-          reLayout(GifView.this);
+          reLayout(BlurGifView.this);
         } catch (Exception ex) {
           Log.e(TAG, "Failed to initialize Player!");
           Log.e(TAG, ex.toString());
