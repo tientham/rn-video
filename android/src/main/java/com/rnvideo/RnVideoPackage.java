@@ -5,6 +5,7 @@ import com.facebook.react.bridge.NativeModule;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.uimanager.ViewManager;
 
+import com.rnvideo.video.BlurGifViewManager;
 import com.rnvideo.video.GifViewManager;
 import com.rnvideo.video.RnVideoConfig;
 import com.rnvideo.video.RnVideoConfigImpl;
@@ -42,7 +43,8 @@ public class RnVideoPackage implements ReactPackage {
       new VideoViewManager(config),
       new ThreeSecVideoViewManager(config),
       new ThreeSecPlayerViewManager(),
-      new GifViewManager()
+      new GifViewManager(),
+      new BlurGifViewManager()
     );
   }
 }

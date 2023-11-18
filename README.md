@@ -1,8 +1,8 @@
-# RnVideo ![Rn-Video](https://img.shields.io/badge/v0.1.7-pass-green.svg?label=latest)
+# RnVideo ![Rn-Video](https://img.shields.io/badge/v0.4.4-pass-green.svg?label=latest)
 
 **RnVideo** is a react native library for a fast and performance video on Android (currently support only Android).
 
-![RnVideo](https://img.shields.io/badge/v0.4.3-pass-green.svg)
+![RnVideo](https://img.shields.io/badge/v0.4.4-pass-green.svg)
 
 ## Motivation
 
